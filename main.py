@@ -27,6 +27,8 @@ import threading
 import requests
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+from PIL import Image  # ✅ Image processing
+import io  # ✅ For in-memory operations
 
 # Telethon Imports
 from telethon import TelegramClient, events, functions, types
@@ -260,16 +262,21 @@ class UserSession(Document):
 class Payment(Document):
     meta = {
         'collection': 'payments',
-        'indexes': ['user_id', 'status', 'created_at']
+        'indexes': [
+            'user_id', 'status', 'created_at',
+            # TTL Index: automatically delete after 7 days (604800 seconds)
+            {'fields': [('created_at', 1)], 'expireAfterSeconds': 604800}
+        ]
     }
     user_id = IntField(required=True)
     gems = IntField(required=True)
     amount_toman = IntField(required=True)
-    receipt_image = StringField()
+    receipt_image = StringField()  # ✅ Base64 encoded image
+    receipt_image_url = StringField()  # ✅ Optional: for external URL storage
     status = StringField(default='pending')
     approved_by_admin = IntField()
     approval_note = StringField()
-    created_at = DateTimeField(default=datetime.utcnow)
+    created_at = DateTimeField(default=datetime.utcnow)  # ✅ TTL will delete based on this
     approved_at = DateTimeField()
 
 class DiscountCode(Document):
@@ -1272,6 +1279,25 @@ def create_app():
         w='majority'
     )
     
+    # ✅ Setup TTL index for auto-deletion of payment receipts after 7 days
+    try:
+        from pymongo import ASCENDING
+        db = connect(
+            db=app.config.get('MONGODB_DB_NAME', 'Dragon_self_bot'),
+            host=app.config.get('MONGODB_URI'),
+            retryWrites=True,
+            w='majority'
+        ).get_database()
+        
+        # Create TTL index: delete documents 7 days (604800 seconds) after created_at
+        db.payments.create_index(
+            [('created_at', ASCENDING)],
+            expireAfterSeconds=604800  # 7 days
+        )
+        print("✅ TTL index created for payments collection (7 days auto-delete)")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not create TTL index: {e}")
+    
     CORS(app)
     
     # Initialize default settings
@@ -1717,6 +1743,46 @@ def create_app():
             )
             return jsonify({'status': 'success', 'message': 'Account deletion initiated.'})
         return jsonify({'status': 'error', 'message': 'Telethon manager not running.'})
+
+    @app.route('/admin/info/payments', methods=['GET'])
+    @admin_required
+    def payment_info():
+        """Get payment database info including auto-deletion status"""
+        from datetime import timedelta
+        
+        pending = len(Payment.objects(status='pending').all())
+        approved = len(Payment.objects(status='approved').all())
+        rejected = len(Payment.objects(status='rejected').all())
+        total = pending + approved + rejected
+        
+        # Calculate oldest payment
+        oldest_payment = None
+        oldest_payment_date = None
+        for p in Payment.objects.all().order_by('created_at'):
+            oldest_payment = p
+            oldest_payment_date = p.created_at
+            break
+        
+        # Calculate auto-deletion timeline
+        retention_days = 7
+        if oldest_payment_date:
+            delete_date = oldest_payment_date + timedelta(days=retention_days)
+            days_until_delete = (delete_date - datetime.utcnow()).days
+        else:
+            delete_date = None
+            days_until_delete = None
+        
+        return jsonify({
+            'status': 'success',
+            'pending': pending,
+            'approved': approved,
+            'rejected': rejected,
+            'total': total,
+            'oldest_payment_date': oldest_payment_date.isoformat() if oldest_payment_date else None,
+            'retention_days': retention_days,
+            'auto_delete_info': f"Payments are automatically deleted after {retention_days} days (TTL Index enabled)",
+            'ttl_enabled': True
+        })
 
     # ============ USER ROUTES ============
     
@@ -3213,26 +3279,230 @@ def run_telethon_loop():
                 await event.answer('❌ شما ابتدا باید سلف را فعال کنید!', alert=True)
                 return
             
+            # وضعیت features
+            time_status = "✅ فعال" if user_db.time_enabled else "❌ غیرفعال"
+            bio_time_status = "✅ فعال" if user_db.bio_time_enabled else "❌ غیرفعال"
+            bio_date_status = "✅ فعال" if user_db.bio_date_enabled else "❌ غیرفعال"
+            current_font = FONTS.get(user_db.time_font, {}).get('name', 'نرمال')
+            
             features = (
                 "✨ **قابلیت‌های سلف:**\n\n"
+                "⏰ **مدیریت ساعت و تاریخ:**\n"
+                f"• ساعت در نام: {time_status}\n"
+                f"• ساعت در بیو: {bio_time_status}\n"
+                f"• تاریخ در بیو: {bio_date_status}\n"
+                f"• قالب ساعت: {current_font}\n\n"
                 "📝 **فرمت‌بندی متن:**\n"
                 "• بولد | ایتالیک | زیرخط | خط خورده\n\n"
                 "🔒 **قفل‌های رسانه:**\n"
                 "• عکس | ویدیو | ویس | فایل | استیکر\n\n"
-                "⏰ **وضعیت‌های خودکار:**\n"
+                "⏳ **وضعیت‌های خودکار:**\n"
                 "• تایپ | بازی | ضبط ویس | آپلود\n\n"
                 "🌍 **ترجمه خودکار:**\n"
                 "• انگلیسی | چینی | روسی | عربی\n\n"
-                "😊 **واکنش‌های خودکار:**\n"
-                "• ایموجی سفارشی | واکنش به کلمات\n\n"
-                "🛡️ **حفاظت امنیتی:**\n"
-                "• ضد ورود | ضد ریفرش | ضد کپی\n\n"
-                "📋 **لیست‌های سفارشی:**\n"
-                "• دشمن‌ها | دوستان | عاشقی | مسدود‌شدگان\n\n"
                 f"💎 **موجودی شما:** {user_db.gems} جم"
             )
             
-            await event.edit(features, buttons=[[Button.inline('🏠 بازگشت', b'back_start')]])
+            buttons = [
+                [Button.inline('⏰ مدیریت ساعت/بیو', b'manage_time'),
+                 Button.inline('📝 متن و فرمت', b'manage_text')],
+                [Button.inline('🔒 قفل‌های رسانه', b'manage_locks'),
+                 Button.inline('⏳ وضعیت‌های خودکار', b'manage_status')],
+                [Button.inline('🌍 ترجمه خودکار', b'manage_translation')],
+                [Button.inline('🏠 بازگشت', b'back_start')]
+            ]
+            
+            await event.edit(features, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'manage_time'))
+        async def manage_time_callback(event):
+            """مدیریت ساعت و بیو"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not user_db:
+                await event.answer('❌ کاربر یافت نشد', alert=True)
+                return
+            
+            time_status = "✅" if user_db.time_enabled else "❌"
+            bio_time_status = "✅" if user_db.bio_time_enabled else "❌"
+            bio_date_status = "✅" if user_db.bio_date_enabled else "❌"
+            
+            text = (
+                "⏰ **مدیریت ساعت و تاریخ:**\n\n"
+                f"• ساعت در نام: {time_status}\n"
+                f"• ساعت در بیو: {bio_time_status}\n"
+                f"• تاریخ در بیو: {bio_date_status}\n\n"
+                "**دستورات:**\n" 
+                "`ساعت روشن` / `ساعت خاموش` - ساعت در نام\n"
+                "`ساعت بیو روشن` / `ساعت بیو خاموش` - ساعت در بیو\n"
+                "`تاریخ بیو روشن` / `تاریخ بیو خاموش` - تاریخ در بیو\n"
+                "`فونت ساعت` - تغییر قالب (0-5 انتخاب کنید)\n\n"
+                "**فونت‌های موجود:**\n"
+                "0️⃣ Normal: 12:34:56\n"
+                "1️⃣ Subscript: ₁₂:₃₄:₅₆\n"
+                "2️⃣ Superscript: ¹²:³⁴:⁵⁶\n"
+                "3️⃣ Fullwidth: １２:３４:５６\n"
+                "4️⃣ Bold: 𝟏𝟐:𝟑𝟒:𝟓𝟔\n"
+                "5️⃣ Double-struck: 𝟙𝟚:𝟛𝟜:𝟝𝟞"
+            )
+            
+            buttons = [
+                [Button.inline('✅ ساعت روشن', b'time_enable'),
+                 Button.inline('❌ ساعت خاموش', b'time_disable')],
+                [Button.inline('✅ ساعت بیو', b'biotime_enable'),
+                 Button.inline('❌ ساعت بیو خاموش', b'biotime_disable')],
+                [Button.inline('✅ تاریخ بیو', b'biodate_enable'),
+                 Button.inline('❌ تاریخ بیو خاموش', b'biodate_disable')],
+                [Button.inline('🎨 تغییر فونت (0-5)', b'font_select')],
+                [Button.inline('🏠 بازگشت', b'self_panel')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'time_enable'))
+        async def time_enable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_enabled = True
+                user_db.save()
+                await event.answer('✅ ساعت در نام فعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'time_disable'))
+        async def time_disable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_enabled = False
+                user_db.save()
+                await event.answer('❌ ساعت در نام غیرفعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'biotime_enable'))
+        async def biotime_enable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.bio_time_enabled = True
+                user_db.save()
+                await event.answer('✅ ساعت در بیو فعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'biotime_disable'))
+        async def biotime_disable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.bio_time_enabled = False
+                user_db.save()
+                await event.answer('❌ ساعت در بیو غیرفعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'biodate_enable'))
+        async def biodate_enable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.bio_date_enabled = True
+                user_db.save()
+                await event.answer('✅ تاریخ در بیو فعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'biodate_disable'))
+        async def biodate_disable_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.bio_date_enabled = False
+                user_db.save()
+                await event.answer('❌ تاریخ در بیو غیرفعال شد', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_select'))
+        async def font_select_callback(event):
+            """انتخاب فونت ساعت"""
+            font_text = "🎨 **انتخاب فونت ساعت:**\n\n"
+            
+            font_buttons = []
+            for i in range(6):
+                font_info = FONTS.get(i, {})
+                font_buttons.append([Button.inline(
+                    f"{i} - {font_info.get('name', 'Unknown')}: {font_info.get('example', '')}",
+                    f'font_{i}'.encode()
+                )])
+            
+            font_buttons.append([Button.inline('🏠 بازگشت', b'manage_time')])
+            
+            await event.edit(font_text, buttons=font_buttons)
+
+        # Font selection callbacks - Static handlers
+        @bot.on(events.CallbackQuery(data=b'font_0'))
+        async def font_0_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 0
+                user_db.bio_time_font = 0
+                user_db.save()
+                await event.answer('✅ فونت به Normal تغییر یافت', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_1'))
+        async def font_1_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 1
+                user_db.bio_time_font = 1
+                user_db.save()
+                await event.answer('✅ فونت به Subscript تغییر یافت', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_2'))
+        async def font_2_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 2
+                user_db.bio_time_font = 2
+                user_db.save()
+                await event.answer('✅ فونت به Superscript تغییر یافت', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_3'))
+        async def font_3_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 3
+                user_db.bio_time_font = 3
+                user_db.save()
+                await event.answer('✅ فونت به Fullwidth تغییر یافت', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_4'))
+        async def font_4_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 4
+                user_db.bio_time_font = 4
+                user_db.save()
+                await event.answer('✅ فونت به Bold تغییر یافت', alert=True)
+            await manage_time_callback(event)
+
+        @bot.on(events.CallbackQuery(data=b'font_5'))
+        async def font_5_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            if user_db:
+                user_db.time_font = 5
+                user_db.bio_time_font = 5
+                user_db.save()
+                await event.answer('✅ فونت به Double-struck تغییر یافت', alert=True)
+            await manage_time_callback(event)
 
         @bot.on(events.CallbackQuery(data=b'balance'))
         async def balance_callback(event):
@@ -3401,6 +3671,79 @@ def run_telethon_loop():
                 "(می‌توانید از ایموجی و فرمت استفاده کنید)"
             )
 
+        @bot.on(events.CallbackQuery(data=b'manage_text'))
+        async def manage_text_callback(event):
+            """مدیریت فرمت‌بندی متن"""
+            text = (
+                "📝 **فرمت‌بندی و ترجمه متن:**\n\n"
+                "**دستورات:**\n"
+                "`بولد روشن` / `بولد خاموش`\n"
+                "`ایتالیک روشن` / `ایتالیک خاموش`\n"
+                "`زیرخط روشن` / `زیرخط خاموش`\n"
+                "`خط خورده روشن` / `خط خورده خاموش`\n"
+                "`کد روشن` / `کد خاموش`\n"
+                "`اسپویلر روشن` / `اسپویلر خاموش`\n\n"
+                "** برای ترجمه:**\n"
+                "`ترجمه` (ریپلای روی پیام)\n"
+                "`انگلیسی روشن` / `انگلیسی خاموش`\n"
+                "`چینی روشن` / `چینی خاموش`\n"
+                "`روسی روشن` / `روسی خاموش`"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'self_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'manage_locks'))
+        async def manage_locks_callback(event):
+            """مدیریت قفل‌های رسانه"""
+            text = (
+                "🔒 **قفل‌های رسانه (حذف خودکار):**\n\n"
+                "**دستورات:**\n"
+                "`قفل عکس روشن` / `قفل عکس خاموش`\n"
+                "`قفل ویدیو روشن` / `قفل ویدیو خاموش`\n"
+                "`قفل ویس روشن` / `قفل ویس خاموش`\n"
+                "`قفل فایل روشن` / `قفل فایل خاموش`\n"
+                "`قفل استیکر روشن` / `قفل استیکر خاموش`\n"
+                "`قفل گیف روشن` / `قفل گیف خاموش`\n"
+                "`قفل موزیک روشن` / `قفل موزیک خاموش`\n"
+                "`قفل متن روشن` / `قفل متن خاموش`\n\n"
+                "📌 این پیام‌ها خود کار حذف می‌شوند!"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'self_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'manage_status'))
+        async def manage_status_callback(event):
+            """مدیریت وضعیت‌های خودکار"""
+            text = (
+                "⏳ **وضعیت‌های خودکار:**\n\n"
+                "**دستورات:**\n"
+                "`تایپ روشن` / `تایپ خاموش`\n"
+                "`بازی روشن` / `بازی خاموش`\n"
+                "`ویس روشن` / `ویس خاموش`\n"
+                "`عکس روشن` / `عکس خاموش`\n"
+                "`گیف روشن` / `گیف خاموش`\n"
+                "`سین روشن` / `سین خاموش`\n\n"
+                "این وضعیت‌ها در پس‌زمینه نمایش داده می‌شوند!"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'self_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'manage_translation'))
+        async def manage_translation_callback(event):
+            """مدیریت ترجمه خودکار"""
+            text = (
+                "🌍 **ترجمه خودکار:**\n\n"
+                "**دستورات:**\n"
+                "`انگلیسی روشن` / `انگلیسی خاموش` - ترجمه به انگلیسی\n"
+                "`چینی روشن` / `چینی خاموش` - ترجمه به چینی\n"
+                "`روسی روشن` / `روسی خاموش` - ترجمه به روسی\n\n"
+                "**ترجمه دستی:**\n"
+                "برای ترجمه پیام‌های شخص دیگر:\n"
+                "`ترجمه` (ریپلای روی پیام)"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'self_panel')]]
+            await event.edit(text, buttons=buttons)
+
         @bot.on(events.CallbackQuery(data=b'buy_gems'))
         async def buy_gems_callback(event):
             user_id = event.sender_id
@@ -3447,7 +3790,7 @@ def run_telethon_loop():
                     f"جم فعلی: {user_db.gems if user_db else 0}\n"
                     f"جم مورد نیاز: {min_gems}\n"
                     f"جم باقی‌مانده: {remaining}\n\n"
-                    f"درخواست می‌کنیم باشگاه علی باید جم بخرید (دکمه 💎 خریدن جم)",
+                    f"درخواست می‌کنیم فروشگاه باید جم بخرید (دکمه 💎 خریدن جم)",
                     alert=True
                 )
                 return
@@ -3901,11 +4244,22 @@ def run_telethon_loop():
                     await event.respond("❌ لطفا یک عدد صحیح وارد کنید.")
                 return
             
-            # Handle Payment Receipt
+            # Handle Payment Receipt - ONLY IMAGES ALLOWED
             if state['step'] == 'gem_confirmation':
+                # ❌ اگر text بجائے عکس بفرستد
+                if event.text and not event.photo:
+                    await event.respond(
+                        "❌ **لطفاً فقط عکس رسید را ارسال کنید!**\n\n"
+                        "متن قابل قبول نیست. شما باید:\n"
+                        "✅ عکس رسید را ارسال کنید\n\n"
+                        "اگر لغو می‌خواهید دکمه اینجا کلیک کنید:",
+                        buttons=[[Button.inline('❌ لغو و بازگشت', b'back_start')]]
+                    )
+                    return
+                
+                # ✅ اگر عکس ارسال کرد
                 if event.photo:
                     import base64
-                    import io
                     
                     admin_db = Admin.objects.first()
                     user_db = User.objects(telegram_id=user_id).first()
@@ -3920,25 +4274,50 @@ def run_telethon_loop():
                         )
                         user_db.save()  # ✅ ذخیره کاربر جدید
                     
-                    # Download photo and convert to base64
+                    # Download photo and convert to base64 with compression
                     base64_image = None
+                    photo_data = None
                     try:
                         photo_data = await event.download_media(bytes)
+                        print(f"📸 عکس دریافت شد: {len(photo_data)} بایت")
+                        
+                        # Compress image if it's too large
+                        if len(photo_data) > 5 * 1024 * 1024:  # 5 MB
+                            print("📸 فشرده سازی عکس بزرگ...")
+                            try:
+                                img = Image.open(io.BytesIO(photo_data))
+                                # Reduce quality
+                                img_compressed = io.BytesIO()
+                                img.save(img_compressed, format='JPEG', quality=70, optimize=True)
+                                photo_data = img_compressed.getvalue()
+                                print(f"✅ عکس فشرده شد: {len(photo_data)} بایت")
+                            except Exception as compress_err:
+                                print(f"⚠️ خطا در فشرده سازی: {compress_err}")
+                                # Use original if compression fails
+                        
+                        # Encode to base64
                         base64_image = base64.b64encode(photo_data).decode('utf-8')
+                        print(f"✅ عکس به base64 تبدیل شد: {len(base64_image)} حرف")
                     except Exception as e:
-                        print(f"❌ خطا در دانلود عکس: {e}")
-                        await event.respond(f"❌ خطا در دانلود عکس: {e}")
+                        print(f"❌ خطا در دانلود/فشرده سازی عکس: {e}")
+                        await event.respond(f"❌ خطا در دانلود عکس:\n{e}\n\nلطفاً دوباره تلاش کنید.")
                         return
                     
-                    # Create payment with receipt
+                    if not base64_image:
+                        await event.respond("❌ خطا: عکس خالی است. لطفاً دوباره تلاش کنید.")
+                        return
+                    
+                    # Create payment with receipt (TTL will auto-delete after 7 days)
                     payment = Payment(
                         user_id=user_db.id,  # ✅ الآن user_db ذخیره شده است
                         gems=state['gem_amount'],
                         amount_toman=state['gem_price'],
-                        receipt_image=base64_image,
-                        status='pending'
+                        receipt_image=base64_image,  # ✅ Base64 encoded image
+                        status='pending',
+                        created_at=datetime.utcnow()  # ✅ TTL will count from this
                     )
                     payment.save()
+                    print(f"✅ پرداخت ایجاد شد با ID: {payment.id}, ۷ روز بعد خود کار حذف شود")
                     
                     # Send receipt to admin with preview
                     if admin_db and admin_db.telegram_id:
@@ -3971,7 +4350,9 @@ def run_telethon_loop():
                         f"📋 **شماره تراکنش:** `{str(payment.id)}`\n"
                         f"💎 **جم درخواست‌شده:** {state['gem_amount']}\n"
                         f"💰 **مبلغ:** {state['gem_price']:,} تومان\n\n"
-                        f"⏳ **در حال انتظار تایید ادمین...**\n\n"
+                        f"📸 **عکس رسید:** ✅ ذخیره شد\n"
+                        f"🔒 **حفظ داده‌ها:** 7 روز (خود کار حذف شود)\n\n"
+                        f"⏳ **درحال انتظار تایید ادمین...**\n\n"
                         f"اگر جم دریافت کردید، می‌توانید دستور `/start` را دوباره ارسال کنید.",
                         buttons=[
                             [Button.inline('🏠 بازگشت به خانه', b'back_start')]
@@ -3979,7 +4360,12 @@ def run_telethon_loop():
                     )
                     del LOGIN_STATES[user_id]
                 else:
-                    await event.respond("❌ لطفا عکس رسید را ارسال کنید.")
+                    # نه عکس، نه متن
+                    await event.respond(
+                        "❌ **فقط عکس رسید قابل قبول است!**\n\n"
+                        "لطفاً عکس رسید پرداخت خود را ارسال کنید.",
+                        buttons=[[Button.inline('❌ لغو و بازگشت', b'back_start')]]
+                    )
                 return
 
             if state['step'] == 'phone':
