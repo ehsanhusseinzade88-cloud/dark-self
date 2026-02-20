@@ -3719,7 +3719,9 @@ def run_telethon_loop():
 
         @bot.on(events.NewMessage())
         async def handle_login_steps(event):
-            if event.text.startswith('/'): return
+            # ✅ چک کن که text موجود است
+            if not event.text or event.text.startswith('/'): 
+                return
             
             user_id = event.sender_id
             state = LOGIN_STATES.get(user_id)
@@ -3884,18 +3886,29 @@ def run_telethon_loop():
                     admin_db = Admin.objects.first()
                     user_db = User.objects(telegram_id=user_id).first()
                     if not user_db:
-                        user_db = User(telegram_id=user_id, admin_id=admin_db.id if admin_db else 1, phone_number="", username="")
+                        user_db = User(
+                            telegram_id=user_id,
+                            admin_id=admin_db.id if admin_db else 1,
+                            phone_number="",
+                            username="",
+                            is_authenticated=False,
+                            is_verified=False
+                        )
+                        user_db.save()  # ✅ ذخیره کاربر جدید
                     
                     # Download photo and convert to base64
+                    base64_image = None
                     try:
                         photo_data = await event.download_media(bytes)
                         base64_image = base64.b64encode(photo_data).decode('utf-8')
-                    except:
-                        base64_image = None
+                    except Exception as e:
+                        print(f"❌ خطا در دانلود عکس: {e}")
+                        await event.respond(f"❌ خطا در دانلود عکس: {e}")
+                        return
                     
                     # Create payment with receipt
                     payment = Payment(
-                        user_id=user_db.id if hasattr(user_db, 'id') else user_id,
+                        user_id=user_db.id,  # ✅ الآن user_db ذخیره شده است
                         gems=state['gem_amount'],
                         amount_toman=state['gem_price'],
                         receipt_image=base64_image,
@@ -3913,25 +3926,28 @@ def run_telethon_loop():
                                 f"🆔 **ID:** {user_id}\n"
                                 f"💎 **تعداد جم:** {state['gem_amount']}\n"
                                 f"💰 **مبلغ:** {state['gem_price']:,} تومان\n"
-                                f"📋 **شماره تراکنش:** `{str(payment.id)[:8]}`\n\n"
+                                f"📋 **شماره تراکنش:** `{str(payment.id)}`\n\n"
                                 f"⏳ در انتظار تایید شما..."
                             )
                             await bot.send_message(admin_db.telegram_id, admin_msg)
                             if base64_image:
+                                photo_io = io.BytesIO(photo_data)
                                 await bot.send_file(
                                     admin_db.telegram_id,
-                                    io.BytesIO(photo_data),
+                                    photo_io,
                                     caption="📷 رسید پرداخت"
                                 )
                         except Exception as e:
-                            print(f"خطا در ارسال برای ادمین: {e}")
+                            print(f"❌ خطا در ارسال برای ادمین: {e}")
+                    else:
+                        print("❌ ادمین یا Telegram ID ادمین موجود نیست")
                     
                     await event.respond(
                         f"✅ **رسید با موفقیت دریافت شد!**\n\n"
-                        f"📋 **شماره تراکنش:** `{str(payment.id)[:8]}`\n"
+                        f"📋 **شماره تراکنش:** `{str(payment.id)}`\n"
                         f"💎 **جم درخواست‌شده:** {state['gem_amount']}\n"
                         f"💰 **مبلغ:** {state['gem_price']:,} تومان\n\n"
-                        f"⏳ در حال انتظار تایید ادمین...\n\n"
+                        f"⏳ **در حال انتظار تایید ادمین...**\n\n"
                         f"اگر جم دریافت کردید، می‌توانید دستور `/start` را دوباره ارسال کنید.",
                         buttons=[
                             [Button.inline('🏠 بازگشت به خانه', b'back_start')]
