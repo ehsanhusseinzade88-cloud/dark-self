@@ -484,7 +484,7 @@ class TelethonManager:
             print(f"[-] Error starting client for {user_id}: {e}")
 
     async def background_updater(self, client, user_id):
-        """Task to update Bio and Name with time if enabled"""
+        """Task to update Bio and Name with time if enabled - ✅ Updated every 3 seconds for accuracy"""
         while True:
             try:
                 user = User.objects(telegram_id=user_id).first()
@@ -503,7 +503,7 @@ class TelethonManager:
                     # await client(functions.account.UpdateProfileRequest(first_name=f"{user.first_name} {time_str}"))
             except Exception as e:
                 pass
-            await asyncio.sleep(60)
+            await asyncio.sleep(3)  # ✅ بهتر: هر 3 ثانیه چک کن (قبلاً 60 ثانیه بود)
 
     def register_handlers(self, client: TelegramClient, user_id):
         
@@ -1505,7 +1505,9 @@ def create_app():
             bank_name=settings.bank_account_name or '',
             admin_username=admin.username if admin else 'admin',
             admin_numeric_id=admin.telegram_id if admin and admin.telegram_id else 'لم تعیین نشده',
-            admin_id=str(admin.id) if admin else ''
+            admin_id=str(admin.id) if admin else '',
+            require_subscription=settings.require_subscription if settings else False,  # ✅ عضویت اجباری
+            subscription_channel=settings.subscription_channel or ''  # ✅ کانال عضویت
         )
     
     @app.route('/admin/settings', methods=['GET', 'POST'])
@@ -1689,6 +1691,8 @@ def create_app():
         admin.settings.gems_per_hour = data.get('gems_per_hour', 2)
         admin.settings.bank_card_number = data.get('bank_card_number', '')
         admin.settings.bank_account_name = data.get('bank_account_name', '')
+        admin.settings.require_subscription = data.get('require_subscription', False)  # ✅ عضویت اجباری
+        admin.settings.subscription_channel = data.get('subscription_channel', '')  # ✅ کانال عضویت
         admin.settings.updated_at = datetime.utcnow()
         
         admin.save()
@@ -2453,6 +2457,26 @@ MANAGE_SETTINGS_TEMPLATE = '''
                 
                 <hr>
                 
+                <h2 style="color: #333; margin-bottom: 20px; font-size: 18px;">📢 عضویت اجباری (اختیاری)</h2>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="require_subscription" style="width: auto; cursor: pointer; margin-left: 8px;">
+                        فعال‌کردن عضویت اجباری در کانال
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label>نام کانال (برای عضویت اجباری)</label>
+                    <input type="text" id="subscription_channel" placeholder="مثال: @dragon_bot یا dragon_bot">
+                </div>
+                
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                    💡 اگر عضویت اجباری فعال باشد، کاربران قبل از استفاده باید در این کانال عضو شوند.
+                </p>
+                
+                <hr>
+                
                 <h2 style="color: #333; margin-bottom: 20px; font-size: 18px;">🏦 اطلاعات بانکی</h2>
                 
                 <div class="form-group">
@@ -2471,6 +2495,12 @@ MANAGE_SETTINGS_TEMPLATE = '''
     </div>
 
     <script>
+        // ✅ مقداردهی اولیه برای عضویت اجباری
+        window.onload = function() {
+            document.getElementById('require_subscription').checked = {{ require_subscription|lower }};
+            document.getElementById('subscription_channel').value = '{{ subscription_channel }}';
+        };
+
         function showMessage(msg, type) {
             const msgEl = document.getElementById('message');
             msgEl.textContent = msg;
@@ -2493,7 +2523,9 @@ MANAGE_SETTINGS_TEMPLATE = '''
                 minimum_gems_activate: parseInt(document.getElementById('min_gems').value),
                 gems_per_hour: parseInt(document.getElementById('gems_per_hour').value),
                 bank_card_number: document.getElementById('bank_card').value,
-                bank_account_name: document.getElementById('bank_name').value
+                bank_account_name: document.getElementById('bank_name').value,
+                require_subscription: document.getElementById('require_subscription').checked,
+                subscription_channel: document.getElementById('subscription_channel').value
             };
             
             try {
@@ -3176,6 +3208,37 @@ def run_telethon_loop():
                         admin_numeric_id = user_id
                         admin_db.save()
 
+                # بررسی عضویت اجباری
+                if admin_db and admin_db.settings.require_subscription and admin_db.settings.subscription_channel:
+                    channel_name = admin_db.settings.subscription_channel
+                    try:
+                        # چک کردن عضویت در کانال
+                        user_in_channel = False
+                        try:
+                            channel = await bot.get_entity(channel_name)
+                            participant = await bot(functions.channels.GetParticipantRequest(channel, user_id))
+                            user_in_channel = True
+                        except:
+                            user_in_channel = False
+                        
+                        if not user_in_channel:
+                            # اگر متعلق نیست، دکمه عضویت نشان بده
+                            buttons = [
+                                [Button.url('✅ عضویت در کانال', f'https://t.me/{channel_name.lstrip("@")}')],
+                                [Button.inline('✔️ تأیید عضویت', b'check_subscription')]
+                            ]
+                            text = (
+                                f"👋 سلام {sender.first_name or 'دوست'}!\n\n"
+                                f"برای استفاده از ربات، ابتدا باید در کانال ما عضو شوید.\n\n"
+                                f"📢 **کانال:**\n"
+                                f"@{channel_name.lstrip('@')}\n\n"
+                                f"پس از عضویت، روی دکمه بالا بزنید."
+                            )
+                            await event.respond(text, buttons=buttons)
+                            return
+                    except Exception as e:
+                        print(f"[!] خطا در بررسی عضویت: {e}")
+
                 # تشخیص وضعیت کاربر
                 user_db = User.objects(telegram_id=user_id).first()
                 if not user_db:
@@ -3268,6 +3331,77 @@ def run_telethon_loop():
                     pass
 
         # ============ CALLBACK HANDLERS ============
+
+        @bot.on(events.CallbackQuery(data=b'check_subscription'))
+        async def check_subscription_callback(event):
+            """✅ بررسی عضویت اجباری و ادامه یا بازگشت"""
+            user_id = event.sender_id
+            sender = await event.get_sender()
+            admin_db = Admin.objects.first()
+            
+            if not admin_db or not admin_db.settings.require_subscription:
+                # عضویت اجباری غیر فعال است
+                await event.answer('✅ عضویت اجباری غیرفعال است!')
+                return
+            
+            channel_name = admin_db.settings.subscription_channel
+            if not channel_name:
+                await event.answer('❌ کانال تعیین نشده است!')
+                return
+            
+            try:
+                # بررسی عضویت کاربر در کانال
+                user_in_channel = False
+                try:
+                    channel = await bot.get_entity(channel_name)
+                    participant = await bot(functions.channels.GetParticipantRequest(channel, user_id))
+                    user_in_channel = True
+                except:
+                    user_in_channel = False
+                
+                if user_in_channel:
+                    # کاربر عضو است - بازگشت به منوی اصلی
+                    await event.delete()
+                    
+                    # ایجاد کاربر در دیتابیس
+                    user_db = User.objects(telegram_id=user_id).first()
+                    if not user_db:
+                        try:
+                            user_db = User(
+                                telegram_id=user_id,
+                                admin_id=str(admin_db.id) if admin_db else 'default',
+                                phone_number=sender.phone or "",
+                                username=sender.username or "",
+                                first_name=sender.first_name or "",
+                                is_authenticated=False
+                            )
+                            user_db.save()
+                        except:
+                            pass
+                    
+                    # ارسال منوی اصلی
+                    buttons = [
+                        [Button.inline('💎 خریدن جم', b'buy_gems')],
+                        [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
+                        [Button.inline('🎁 انتقال جم', b'transfer_gems')],
+                        [Button.inline('📊 موجودی', b'balance')]
+                    ]
+                    text = (
+                        f"✅ **خوش آمدید {sender.first_name or 'دوست'}!**\n\n"
+                        f"🎉 عضویت شما تأیید شد.\n\n"
+                        f"💎 **موجودی:** {user_db.gems if user_db else 0} جم\n\n"
+                        f"📋 **گزینه‌های موجود:**\n"
+                        f"💎 خریدن جم\n"
+                        f"🚀 فعال‌سازی سلف\n"
+                        f"🎁 انتقال جم به دوستان"
+                    )
+                    await event.respond(text, buttons=buttons)
+                else:
+                    # هنوز عضو نشده است
+                    await event.answer('❌ ابتدا در کانال عضو شوید، سپس دوباره تلاش کنید!', alert=True)
+            except Exception as e:
+                print(f"[!] خطا در بررسی عضویت: {e}")
+                await event.answer(f'❌ خطای سیستم: {str(e)[:50]}', alert=True)
 
         @bot.on(events.CallbackQuery(data=b'self_panel'))
         async def self_panel_callback(event):
