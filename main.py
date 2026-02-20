@@ -412,6 +412,28 @@ class Report(Document):
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
 
+class Bet(Document):
+    meta = {
+        'collection': 'bets',
+        'indexes': ['bet_id', 'creator_id', 'joiner_id', 'status', 'group_id']
+    }
+    bet_id = StringField(required=True, unique=True)
+    group_id = IntField(required=True)
+    creator_id = IntField(required=True)
+    creator_name = StringField()
+    joiner_id = IntField(sparse=True)
+    joiner_name = StringField()
+    amount = IntField(required=True)
+    status = StringField(choices=['waiting', 'active', 'completed'], default='waiting')
+    winner_id = IntField(sparse=True)
+    loser_id = IntField(sparse=True)
+    commission = IntField(default=2)
+    winner_gems = IntField(default=0)
+    loser_gems_lost = IntField(default=0)
+    created_at = DateTimeField(default=datetime.utcnow)
+    completed_at = DateTimeField(sparse=True)
+    message_id = IntField(sparse=True)
+
 
 # ============ TELETHON CLIENT MANAGER ============
 
@@ -2930,6 +2952,36 @@ def run_telethon_loop():
         print("[+] Main Bot Interface Started!")
 
         LOGIN_STATES = {}
+        ACTIVE_BETS = {}  # {group_id: bet_id}
+
+        @bot.on(events.NewMessage(pattern='/adminid'))
+        async def set_admin_id_handler(event):
+            """Set admin numeric ID"""
+            sender = await event.get_sender()
+            user_id = sender.id
+            
+            admin_db = Admin.objects.first()
+            
+            if not admin_db:
+                await event.respond("❌ ادمین یافت نشد. لطفا ابتدا پنل админа را فعال کنید.")
+                return
+            
+            # Check if this person can set admin ID (they must have correct username or be the admin)
+            username = sender.username or ""
+            if admin_db.username.lower() != username.lower() and Config.ADMIN_USERNAME.lower() != username.lower():
+                await event.respond("❌ شما اجازه ندارید ID ادمین را تعیین کنید.")
+                return
+            
+            # Set admin numeric ID
+            admin_db.telegram_id = user_id
+            admin_db.save()
+            
+            await event.respond(
+                f"✅ **ID ادمین تنظیم شد:**\n\n"
+                f"🔐 **ID عددی:** {user_id}\n"
+                f"👤 **نام کاربری:** {admin_db.username}\n\n"
+                f"حالا ربات شما را می‌شناسد! 🎉"
+            )
 
         @bot.on(events.NewMessage(pattern='/start'))
         async def start_handler(event):
@@ -2959,14 +3011,32 @@ def run_telethon_loop():
                     [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
                     [Button.inline('📣 پیام همگانی', b'admin_broadcast')]
                 ]
-                text = f"👑 **سلام ادمین!** (ID: {user_id})\n\n🎛️ **دستورات موجود:**\n• پنل مدیریتی کامل\n• فعال‌سازی سلف رایگان\n• ارسال پیام به تمامی کاربران\n• مدیریت عضویت اجباری\n• مدیریت پرداخت‌ها"
+                text = (
+                    f"👑 **سلام ادمین!** (ID: {user_id})\n\n"
+                    f"🎛️ **دستورات موجود:**\n"
+                    f"• 🌐 پنل مدیریتی کامل\n"
+                    f"• 🚀 فعال‌سازی سلف رایگان\n"
+                    f"• 📣 ارسال پیام به تمام کاربران\n"
+                    f"• 🎰 سیستم قمار در گروه‌ها\n\n"
+                    f"**برای تنظیم ID ادمین:**\n`/adminid` را دستور بدهید\n"
+                    f"(فقط یک بار برای شناخت خودکار ربات)"
+                )
             else:
                 buttons = [
                     [Button.inline('💎 خریدن جم', b'buy_gems')],
                     [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
                     [Button.inline('🎁 انتقال جم', b'transfer_gems')]
                 ]
-                text = "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n📋 **گزینه‌های موجود:**\n💎 خریدن جم\n🚀 فعال‌سازی سلف\n🎁 انتقال جم به دوستان"
+                text = (
+                    "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n"
+                    "📋 **گزینه‌های موجود:**\n"
+                    f"💎 خریدن جم\n"
+                    f"🚀 فعال‌سازی سلف\n"
+                    f"🎁 انتقال جم به دوستان\n\n"
+                    f"**نکات:**\n"
+                    f"• از دستور `bet X` در گروه‌ها برای قمار استفاده کنید\n"
+                    f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
+                )
 
             await event.respond(text, buttons=buttons)
 
@@ -3163,6 +3233,216 @@ def run_telethon_loop():
             await event.edit(text, buttons=buttons)
             if user_id in LOGIN_STATES:
                 del LOGIN_STATES[user_id]
+
+        # ============ BETTING SYSTEM HANDLERS ============
+        
+        @bot.on(events.NewMessage(pattern=r'^bet\s+(\d+)$'))
+        async def betting_handler(event):
+            """Handle 'bet X' command in groups"""
+            if event.is_private:
+                await event.respond("❌ دستور قمار فقط در گروه‌ها کار می‌کند.")
+                return
+            
+            sender = await event.get_sender()
+            user_id = sender.id
+            group_id = event.chat_id
+            username = sender.first_name or "کاربر"
+            
+            # Parse bet amount
+            import re
+            match = re.match(r'^bet\s+(\d+)$', event.text.strip())
+            if not match:
+                return
+            
+            amount = int(match.group(1))
+            
+            # Check if user has enough gems
+            user_db = User.objects(telegram_id=user_id).first()
+            if not user_db or user_db.gems < amount:
+                await event.respond(f"❌ {username}، شما جم کافی ندارید! جم دارید: {user_db.gems if user_db else 0}")
+                return
+            
+            # Check if there's already an active bet in this group
+            if group_id in ACTIVE_BETS:
+                await event.respond("🔄 یک قمار فعال در حال حاضر در این گروه وجود دارد. صبر کنید تا تمام شود.")
+                return
+            
+            # Create new bet
+            import uuid
+            bet_id = str(uuid.uuid4())[:8]
+            
+            bet = Bet(
+                bet_id=bet_id,
+                group_id=group_id,
+                creator_id=user_id,
+                creator_name=username,
+                amount=amount,
+                status='waiting'
+            )
+            bet.save()
+            
+            ACTIVE_BETS[group_id] = bet_id
+            
+            msg = await event.respond(
+                f"🎰 **قمار شروع شد!**\n\n"
+                f"👤 **سازنده:** {username}\n"
+                f"💎 **مبلغ:** {amount} جم\n\n"
+                f"⏳ **در انتظار شرکت‌کننده...**\n"
+                f"برای پیوستن به قمار دکمه پایین را بزنید!",
+                buttons=[[Button.inline('🎲 پیوستن به قمار', b'join_bet')]]
+            )
+            
+            bet.message_id = msg.id
+            bet.save()
+            
+            # Auto-delete bet after 60 seconds if no one joins
+            await asyncio.sleep(60)
+            bet_check = Bet.objects(bet_id=bet_id).first()
+            if bet_check and bet_check.status == 'waiting':
+                await event.respond(f"❌ قمار منقضی شد! بدون شرکت‌کننده.")
+                Bet.objects(bet_id=bet_id).delete()
+                if group_id in ACTIVE_BETS:
+                    del ACTIVE_BETS[group_id]
+
+        @bot.on(events.CallbackQuery(data=b'join_bet'))
+        async def join_bet_callback(event):
+            """Handle joining a bet"""
+            joiner_id = event.sender_id
+            joiner_name = (await event.get_sender()).first_name or "کاربر"
+            group_id = event.chat_id
+            
+            # Find active bet in this group
+            if group_id not in ACTIVE_BETS:
+                await event.answer("❌ قمار فعالی وجود ندارد.", alert=True)
+                return
+            
+            bet_id = ACTIVE_BETS[group_id]
+            bet = Bet.objects(bet_id=bet_id).first()
+            
+            if not bet:
+                await event.answer("❌ قمار پیدا نشد.", alert=True)
+                if group_id in ACTIVE_BETS:
+                    del ACTIVE_BETS[group_id]
+                return
+            
+            # Check if joiner already created this bet
+            if bet.creator_id == joiner_id:
+                await event.answer("❌ نمی‌توانید به قمار خودتان بپیوندید!", alert=True)
+                return
+            
+            # Check if joiner has enough gems
+            joiner_db = User.objects(telegram_id=joiner_id).first()
+            if not joiner_db or joiner_db.gems < bet.amount:
+                await event.answer(f"❌ شما جم کافی ندارید! جم دارید: {joiner_db.gems if joiner_db else 0}", alert=True)
+                return
+            
+            # Check if someone already joined
+            if bet.joiner_id:
+                await event.answer("❌ یک شخص دیگر قبلاً به این قمار پیوسته است!", alert=True)
+                return
+            
+            # Add joiner to bet
+            bet.joiner_id = joiner_id
+            bet.joiner_name = joiner_name
+            bet.status = 'active'
+            bet.save()
+            
+            # Update message
+            await event.edit(
+                f"🎰 **قمار شروع شد!**\n\n"
+                f"👤 **سازنده:** {bet.creator_name}\n"
+                f"👤 **شرکت‌کننده:** {joiner_name}\n"
+                f"💎 **مبلغ:** {bet.amount} جم\n\n"
+                f"⏳ **درحال شمارش معکوس برای انتخاب برنده...**"
+            )
+            
+            # Wait 5 seconds then randomly select winner
+            await asyncio.sleep(5)
+            
+            import random
+            winner_id = bet.creator_id if random.choice([True, False]) else bet.joiner_id
+            loser_id = bet.joiner_id if winner_id == bet.creator_id else bet.creator_id
+            
+            winner_name = bet.creator_name if winner_id == bet.creator_id else bet.joiner_name
+            loser_name = bet.joiner_name if winner_id == bet.creator_id else bet.creator_name
+            
+            # Calculate gems
+            total_pool = bet.amount * 2
+            commission = bet.commission
+            winner_gems_earned = total_pool - commission
+            
+            # Update users
+            creator_db = User.objects(telegram_id=bet.creator_id).first()
+            joiner_db = User.objects(telegram_id=bet.joiner_id).first()
+            
+            if winner_id == bet.creator_id:
+                creator_db.gems += winner_gems_earned
+                joiner_db.gems -= bet.amount
+            else:
+                joiner_db.gems += winner_gems_earned
+                creator_db.gems -= bet.amount
+            
+            creator_db.save()
+            joiner_db.save()
+            
+            # Update bet record
+            bet.winner_id = winner_id
+            bet.loser_id = loser_id
+            bet.status = 'completed'
+            bet.winner_gems = winner_gems_earned
+            bet.loser_gems_lost = bet.amount
+            bet.completed_at = datetime.utcnow()
+            bet.save()
+            
+            # Send result
+            result_msg = (
+                f"🎰 **نتیجه قمار:**\n\n"
+                f"🏆 **برنده:** {winner_name}\n"
+                f"💎 **جم دریافت‌شده:** {winner_gems_earned} (بعد از کارمزد {commission} جم)\n\n"
+                f"😔 **بازنده:** {loser_name}\n"
+                f"💔 **جم از دست‌رفته:** {bet.amount}\n\n"
+                f"📊 **آمار:**\n• جم سازنده: {creator_db.gems}\n• جم شرکت‌کننده: {joiner_db.gems}"
+            )
+            
+            await event.edit(result_msg)
+            
+            # Remove from active bets
+            if group_id in ACTIVE_BETS:
+                del ACTIVE_BETS[group_id]
+
+        @bot.on(events.NewMessage())
+        async def handle_empty_or_betting_message(event):
+            """Handle empty messages to show gem balance"""
+            if event.text and event.text.startswith('/'):
+                return
+            
+            # If message is empty or just whitespace
+            if not event.text or event.text.strip() == '':
+                user_id = event.sender_id
+                user_db = User.objects(telegram_id=user_id).first()
+                
+                if not user_db:
+                    admin_db = Admin.objects.first()
+                    user_db = User(
+                        telegram_id=user_id,
+                        admin_id=admin_db.id if admin_db else 1,
+                        phone_number="",
+                        username=""
+                    )
+                    user_db.save()
+                
+                sender = await event.get_sender()
+                name = sender.first_name or "کاربر"
+                
+                await event.respond(
+                    f"💎 **موجودی جم شما:**\n\n"
+                    f"👤 **نام:** {name}\n"
+                    f"💎 **جم:** {user_db.gems}\n\n"
+                    f"دستورات:\n"
+                    f"• `bet X` - شروع قمار (در گروه)\n"
+                    f"• `/start` - بازگشت به منو اصلی"
+                )
+                return
 
         @bot.on(events.NewMessage())
         async def handle_login_steps(event):
