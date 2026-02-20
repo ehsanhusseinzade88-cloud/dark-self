@@ -2,6 +2,7 @@ telethon
 flask
 flask-cors
 pymongo
+mongoengine
 python-dotenv
 pytz
 jdatetime
