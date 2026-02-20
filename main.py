@@ -34,7 +34,7 @@ class Config:
         'mongodb+srv://ehsanpoint_db_user:nz7eUwWT8chu5Wpb@cluster0test.bmg2cu2.mongodb.net/?appName=Cluster0Test'
     )
     MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'Dragon_self_bot')
-    API_ID = int(os.getenv('API_ID', ''))
+    API_ID = int(os.getenv('API_ID', '9536480'))
     API_HASH = os.getenv('API_HASH', '4e52f6f12c47a0da918009260b6e3d44')
     BOT_TOKEN = os.getenv('BOT_TOKEN', '8294693574:AAHFBuO6qlrBkAEEo0zFq0ViN26GfLuIEUU')
     ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'meta')
