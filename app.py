@@ -7,6 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from payment_handler import PaymentManager, GemDeductionScheduler
 import os
+import certifi
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,6 +29,7 @@ def create_app(config_name=None):
     connect(
         db=app.config.get('MONGODB_DB_NAME', 'dark_self_bot'),
         host=app.config.get('MONGODB_URI'),
+        tlsCAFile=certifi.where(),
         retryWrites=True,
         w='majority'
     )
@@ -81,4 +83,6 @@ def init_default_settings():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Get port dynamically for cloud environments like Render
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
