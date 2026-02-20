@@ -1402,8 +1402,9 @@ def create_app():
             receipt_button = ""
             if p.receipt_image:
                 # If receipt_image is base64 encoded
+                payment_id = str(p.id)
                 receipt_src = f"data:image/png;base64,{p.receipt_image}" if not p.receipt_image.startswith('data:') else p.receipt_image
-                receipt_button = f"<button onclick=\"showReceipt('{receipt_src}')\" style='background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;'>📷 رسید</button>"
+                receipt_button = f"<button data-image=\"{payment_id}\" class='receipt-btn' style='background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;'>📷 رسید</button>"
             else:
                 receipt_button = "<span style='color: #999;'>بدون رسید</span>"
             
@@ -1577,6 +1578,22 @@ def create_app():
         
         result = PaymentManager.reject_payment(payment_id, admin_id, note)
         return jsonify(result)
+    
+    @app.route('/admin/payment/<payment_id>/image', methods=['GET'])
+    @admin_required
+    def get_payment_image(payment_id):
+        """Get payment receipt image as base64"""
+        try:
+            payment = Payment.objects(id=ObjectId(payment_id)).first()
+            if payment and payment.receipt_image:
+                image_data = payment.receipt_image
+                if not image_data.startswith('data:'):
+                    image_data = f"data:image/png;base64,{image_data}"
+                return jsonify({'status': 'success', 'image': image_data})
+            else:
+                return jsonify({'status': 'error', 'message': 'عکس در دسترس نیست'}), 404
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
     
     @app.route('/admin/settings/save', methods=['POST'])
     @admin_required
@@ -2150,6 +2167,22 @@ MANAGE_PAYMENTS_TEMPLATE = '''
             img.src = imageSrc;
             modal.style.display = 'block';
         }
+
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('receipt-btn')) {
+                const paymentId = e.target.getAttribute('data-image');
+                fetch(`/admin/payment/${paymentId}/image`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.image) {
+                            showReceipt(data.image);
+                        } else {
+                            alert('❌ عکس در دسترس نیست');
+                        }
+                    })
+                    .catch(err => alert('❌ خطا: ' + err));
+            }
+        });
 
         function closeReceiptModal() {
             document.getElementById('receiptModal').style.display = 'none';
@@ -2994,7 +3027,7 @@ def run_telethon_loop():
             if is_admin:
                 domain = "https://dark-self.onrender.com/auth/admin/login" 
                 buttons = [
-                    [Button.web_app('🌐 پنل مدیریت ادمین', domain)],
+                    [Button.url('🌐 پنل مدیریت ادمین', domain)],
                     [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
                     [Button.inline('📣 پیام همگانی', b'admin_broadcast')]
                 ]
@@ -3592,19 +3625,53 @@ def run_telethon_loop():
             # Handle Payment Receipt
             if state['step'] == 'gem_confirmation':
                 if event.photo:
+                    import base64
+                    import io
+                    
                     admin_db = Admin.objects.first()
                     user_db = User.objects(telegram_id=user_id).first()
                     if not user_db:
                         user_db = User(telegram_id=user_id, admin_id=admin_db.id if admin_db else 1, phone_number="", username="")
+                    
+                    # Download photo and convert to base64
+                    try:
+                        photo_data = await event.download_media(bytes)
+                        base64_image = base64.b64encode(photo_data).decode('utf-8')
+                    except:
+                        base64_image = None
                     
                     # Create payment with receipt
                     payment = Payment(
                         user_id=user_db.id if hasattr(user_db, 'id') else user_id,
                         gems=state['gem_amount'],
                         amount_toman=state['gem_price'],
+                        receipt_image=base64_image,
                         status='pending'
                     )
                     payment.save()
+                    
+                    # Send receipt to admin with preview
+                    if admin_db and admin_db.telegram_id:
+                        try:
+                            sender = await event.get_sender()
+                            admin_msg = (
+                                f"📦 **رسید جدید برای تایید**\n\n"
+                                f"👤 **کاربر:** {sender.first_name or 'نشناخته'}\n"
+                                f"🆔 **ID:** {user_id}\n"
+                                f"💎 **تعداد جم:** {state['gem_amount']}\n"
+                                f"💰 **مبلغ:** {state['gem_price']:,} تومان\n"
+                                f"📋 **شماره تراکنش:** `{str(payment.id)[:8]}`\n\n"
+                                f"⏳ در انتظار تایید شما..."
+                            )
+                            await bot.send_message(admin_db.telegram_id, admin_msg)
+                            if base64_image:
+                                await bot.send_file(
+                                    admin_db.telegram_id,
+                                    io.BytesIO(photo_data),
+                                    caption="📷 رسید پرداخت"
+                                )
+                        except Exception as e:
+                            print(f"خطا در ارسال برای ادمین: {e}")
                     
                     await event.respond(
                         f"✅ **رسید با موفقیت دریافت شد!**\n\n"
@@ -3783,11 +3850,11 @@ if __name__ == '__main__':
 ║    ✓ Payment System (Gems-based)                             ║
 ║    ✓ Admin Panel (Complete control)                          ║
 ║    ✓ Free Self-Bot for Admins                                ║
-║                                                              ║
-║  📍 Server: http://localhost:5000                            ║
-║  🚪 Login: http://localhost:5000/auth/admin/login            ║
-║  👤 Default: admin / admin123                                ║
 ║                                                               ║
+║  📍 Server: https://dark-self.onrender.com/                  ║
+║  🚪 Login: https://dark-self.onrender.com//auth/admin/login  ║
+║  👤 Default: admin / admin123                                ║
+║                                                              ║
 ║  🗄️ Database: MongoDB Connected                              ║
 ║  🔄 Scheduler: APScheduler Active                            ║
 ║  💎 Payment: Toman-based Gem System                          ║
