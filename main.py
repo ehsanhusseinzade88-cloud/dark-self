@@ -1662,19 +1662,6 @@ def create_app():
             return jsonify({'status': 'success', 'message': 'Account deletion initiated.'})
         return jsonify({'status': 'error', 'message': 'Telethon manager not running.'})
 
-    @app.route('/admin/payments', methods=['GET'])
-    @admin_required
-    def payments():
-        payments = PaymentManager.get_pending_payments()
-        return jsonify({'payments': payments})
-    
-    @app.route('/admin/payment/<payment_id>/approve', methods=['POST'])
-    @admin_required
-    def approve_payment(payment_id):
-        admin_id = session.get('admin_id')
-        result = PaymentManager.approve_payment(payment_id, admin_id)
-        return jsonify(result)
-    
     # ============ USER ROUTES ============
     
     @app.route('/user/<user_id>/profile', methods=['GET'])
