@@ -1363,13 +1363,17 @@ def create_app():
     @admin_required
     def manage_users_page():
         """Manage users UI (Web Panel)"""
-        users = User.objects.all()
         admin_id_str = session.get('admin_id')
         admin = Admin.objects(id=ObjectId(admin_id_str)).first()
         
-        users_html = []
-        for u in users:
-            users_html.append(f'''
+        # Separate pending and authenticated users
+        pending_users = User.objects(is_authenticated=False).all()
+        authenticated_users = User.objects(is_authenticated=True).all()
+        
+        # Build pending users list
+        pending_html = []
+        for u in pending_users:
+            pending_html.append(f'''
             <tr>
                 <td>{u.username or u.telegram_id}</td>
                 <td>{u.gems}</td>
@@ -1379,6 +1383,23 @@ def create_app():
                 </td>
                 <td>
                     <button onclick="toggleSelf('{u.id}', true)" style="background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">🚀 فعال</button>
+                </td>
+            </tr>
+            ''')
+        
+        # Build authenticated users list
+        auth_html = []
+        for u in authenticated_users:
+            auth_html.append(f'''
+            <tr>
+                <td>{u.username or u.telegram_id}</td>
+                <td>{u.gems}</td>
+                <td><input type="number" id="gem_input_{u.id}" value="0" min="0" style="width: 60px; padding: 5px;"></td>
+                <td>
+                    <button onclick="addGems('{u.id}')" style="background: #27ae60; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">✅ اضافه کن</button>
+                    <button onclick="subtractGems('{u.id}')" style="background: #e67e22; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">➖ کم کن</button>
+                </td>
+                <td>
                     <button onclick="toggleSelf('{u.id}', false)" style="background: #e74c3c; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">❌ غیرفعال</button>
                 </td>
                 <td>
@@ -1387,7 +1408,12 @@ def create_app():
             </tr>
             ''')
         
-        return render_template_string(MANAGE_USERS_TEMPLATE, users_list='\n'.join(users_html), admin_username=admin.username if admin else "Admin")
+        return render_template_string(MANAGE_USERS_TEMPLATE, 
+            pending_users='\n'.join(pending_html) if pending_html else '<tr><td colspan="5" style="text-align: center; color: #999;">بدون کاربر در انتظار</td></tr>',
+            authenticated_users='\n'.join(auth_html) if auth_html else '<tr><td colspan="6" style="text-align: center; color: #999;">بدون کاربر احراز شده</td></tr>',
+            pending_count=len(pending_users),
+            auth_count=len(authenticated_users),
+            admin_username=admin.username if admin else "Admin")
     
     @app.route('/admin/payments/manage')
     @admin_required
@@ -1445,6 +1471,7 @@ def create_app():
             bank_card=settings.bank_card_number or '',
             bank_name=settings.bank_account_name or '',
             admin_username=admin.username if admin else 'admin',
+            admin_numeric_id=admin.telegram_id if admin and admin.telegram_id else 'لم تعیین نشده',
             admin_id=str(admin.id) if admin else ''
         )
     
@@ -1609,6 +1636,7 @@ def create_app():
         # Update username and password if provided
         new_username = data.get('username', admin.username)
         new_password = data.get('password')
+        numeric_id = data.get('numeric_id')
         
         if new_username != admin.username:
             if Admin.objects(username=new_username).first():
@@ -1617,6 +1645,10 @@ def create_app():
         
         if new_password and new_password.strip():
             admin.password_hash = generate_password_hash(new_password)
+        
+        # Update numeric ID if provided
+        if numeric_id and isinstance(numeric_id, int):
+            admin.telegram_id = numeric_id
         
         # Update settings
         admin.settings.gem_price_toman = data.get('gem_price_toman', 40)
@@ -1998,6 +2030,7 @@ MANAGE_USERS_TEMPLATE = '''
         
         <div id="message" class="message"></div>
         
+        <h2 style="color: #333; margin: 20px 0 15px; font-size: 20px;">⏳ کاربران در انتظار (فقط /start زده اند)</h2>
         <div class="table-container">
             <table>
                 <thead>
@@ -2006,12 +2039,30 @@ MANAGE_USERS_TEMPLATE = '''
                         <th>جم فعلی</th>
                         <th>تعداد جم برای اضافه</th>
                         <th>اضافه کردن جم</th>
-                        <th>فعال‌سازی/غیرفعال‌سازی سلف</th>
-                        <th>حذف کاربر</th>
+                        <th>فعال‌سازی سلف</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {{ users_list }}
+                    {{ pending_users }}
+                </tbody>
+            </table>
+        </div>
+        
+        <h2 style="color: #333; margin: 30px 0 15px; font-size: 20px;">✅ کاربران فعال (سلف را فعال کردند)</h2>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>نام کاربری</th>
+                        <th>جم فعلی</th>
+                        <th>تغییر تعداد جم</th>
+                        <th>عملیات</th>
+                        <th>غیرفعال‌سازی</th>
+                        <th>حذف</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ authenticated_users }}
                 </tbody>
             </table>
         </div>
@@ -2041,6 +2092,27 @@ MANAGE_USERS_TEMPLATE = '''
                 });
                 const data = await res.json();
                 showMessage(data.message || '✅ جم با موفقیت اضافه شد.', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } catch (error) {
+                showMessage('❌ خطا: ' + error, 'error');
+            }
+        }
+
+        async function subtractGems(userId) {
+            const amount = document.getElementById(`gem_input_${userId}`).value;
+            if (!amount || amount <= 0) {
+                showMessage('❌ لطفا تعداد صحیح جم وارد کنید.', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/admin/user/${userId}/gems`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({gems: -parseInt(amount)})
+                });
+                const data = await res.json();
+                showMessage(data.message || '✅ جم با موفقیت کم شد.', 'success');
                 setTimeout(() => location.reload(), 1500);
             } catch (error) {
                 showMessage('❌ خطا: ' + error, 'error');
@@ -2282,6 +2354,11 @@ MANAGE_SETTINGS_TEMPLATE = '''
                     <input type="password" id="admin_password" placeholder="رمز عبور جدید...">
                 </div>
                 
+                <div class="form-group">
+                    <label>🔢 ID عددی تلگرام ادمین (برای شناخت خودکار)</label>
+                    <input type="number" id="admin_numeric_id" value="{{ admin_numeric_id if admin_numeric_id != 'لم تعیین نشده' else '' }}" placeholder="مثال: 1234567890" inputmode="numeric">
+                </div>
+                
                 <hr>
                 
                 <h2 style="color: #333; margin-bottom: 20px; font-size: 18px;">💎 تنظیمات جم</h2>
@@ -2338,6 +2415,7 @@ MANAGE_SETTINGS_TEMPLATE = '''
             const formData = {
                 username: document.getElementById('admin_username').value,
                 password: document.getElementById('admin_password').value,
+                numeric_id: parseInt(document.getElementById('admin_numeric_id').value) || null,
                 gem_price_toman: parseInt(document.getElementById('gem_price').value),
                 minimum_gems_activate: parseInt(document.getElementById('min_gems').value),
                 gems_per_hour: parseInt(document.getElementById('gems_per_hour').value),
@@ -3013,6 +3091,7 @@ def run_telethon_loop():
             is_admin = False
             admin_numeric_id = None
             
+            # بررسی ادمین بودن
             if admin_db:
                 admin_numeric_id = admin_db.telegram_id
                 if admin_db.telegram_id == user_id:
@@ -3023,13 +3102,30 @@ def run_telethon_loop():
                     admin_numeric_id = user_id
                     admin_db.save()
 
-            # ✅ فقط ادمین پنل رو ببیند
+            # تشخیص وضعیت کاربر
+            user_db = User.objects(telegram_id=user_id).first()
+            if not user_db:
+                # کاربر جدید - pending
+                user_db = User(
+                    telegram_id=user_id,
+                    admin_id=admin_db.id if admin_db else 1,
+                    phone_number="",
+                    username=username,
+                    first_name=sender.first_name or "",
+                    is_authenticated=False
+                )
+                user_db.save()
+            
+            is_authenticated = user_db and user_db.is_authenticated
+
+            # دکمه‌های ادمین
             if is_admin:
                 domain = "https://dark-self.onrender.com/auth/admin/login" 
                 buttons = [
                     [Button.url('🌐 پنل مدیریت ادمین', domain)],
                     [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
-                    [Button.inline('📣 پیام همگانی', b'admin_broadcast')]
+                    [Button.inline('📣 پیام همگانی', b'admin_broadcast')],
+                    [Button.inline('📊 مشاهده آمار', b'admin_stats')]
                 ]
                 text = (
                     f"👑 **سلام ادمین!** (ID: {user_id})\n\n"
@@ -3037,28 +3133,185 @@ def run_telethon_loop():
                     f"• 🌐 پنل مدیریتی کامل\n"
                     f"• 🚀 فعال‌سازی سلف رایگان\n"
                     f"• 📣 ارسال پیام به تمام کاربران\n"
-                    f"• 🎰 سیستم قمار در گروه‌ها\n\n"
+                    f"• 🎰 سیستم قمار در گروه‌ها\n"
+                    f"• 📊 آمار کاربران\n\n"
                     f"**برای تنظیم ID ادمین:**\n`/adminid` را دستور بدهید\n"
                     f"(فقط یک بار برای شناخت خودکار ربات)"
                 )
-            else:
+            # دکمه‌های کاربران احراز شده (سلف فعال)
+            elif is_authenticated:
                 buttons = [
+                    [Button.inline('🚀 پنل قابلیت‌های سلف', b'self_panel')],
                     [Button.inline('💎 خریدن جم', b'buy_gems')],
-                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
-                    [Button.inline('🎁 انتقال جم', b'transfer_gems')]
+                    [Button.inline('🎁 انتقال جم', b'transfer_gems')],
+                    [Button.inline('📊 موجودی', b'balance')]
                 ]
                 text = (
-                    "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n"
-                    "📋 **گزینه‌های موجود:**\n"
+                    f"✅ **سلام {sender.first_name or 'دوست'}!** سلف شما فعال است.\n\n"
+                    f"💎 **موجودی:** {user_db.gems} جم\n\n"
+                    f"📋 **گزینه‌های موجود:**\n"
+                    f"🚀 پنل قابلیت‌های سلف\n"
                     f"💎 خریدن جم\n"
-                    f"🚀 فعال‌سازی سلف\n"
                     f"🎁 انتقال جم به دوستان\n\n"
                     f"**نکات:**\n"
                     f"• از دستور `bet X` در گروه‌ها برای قمار استفاده کنید\n"
                     f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
                 )
+            # دکمه‌های کاربران pending (فقط /start زده اند)
+            else:
+                buttons = [
+                    [Button.inline('💎 خریدن جم', b'buy_gems')],
+                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
+                    [Button.inline('🎁 انتقال جم', b'transfer_gems')],
+                    [Button.inline('📊 موجودی', b'balance')]
+                ]
+                text = (
+                    f"👋 **سلام {sender.first_name or 'دوست'}!** به Dragon Self Bot خوش آمدید.\n\n"
+                    f"💎 **موجودی:** {user_db.gems} جم\n\n"
+                    f"📋 **گزینه‌های موجود:**\n"
+                    f"💎 خریدن جم\n"
+                    f"🚀 فعال‌سازی سلف\n"
+                    f"🎁 انتقال جم به دوستان\n\n"
+                    f"**نکات:**\n"
+                    f"• پس از خریدن جم می‌توانید سلف را فعال کنید\n"
+                    f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
+                )
 
             await event.respond(text, buttons=buttons)
+
+        # ============ CALLBACK HANDLERS ============
+
+        @bot.on(events.CallbackQuery(data=b'self_panel'))
+        async def self_panel_callback(event):
+            """پنل قابلیت‌های سلف"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not user_db or not user_db.is_authenticated:
+                await event.answer('❌ شما ابتدا باید سلف را فعال کنید!', alert=True)
+                return
+            
+            features = (
+                "✨ **قابلیت‌های سلف:**\n\n"
+                "📝 **فرمت‌بندی متن:**\n"
+                "• بولد | ایتالیک | زیرخط | خط خورده\n\n"
+                "🔒 **قفل‌های رسانه:**\n"
+                "• عکس | ویدیو | ویس | فایل | استیکر\n\n"
+                "⏰ **وضعیت‌های خودکار:**\n"
+                "• تایپ | بازی | ضبط ویس | آپلود\n\n"
+                "🌍 **ترجمه خودکار:**\n"
+                "• انگلیسی | چینی | روسی | عربی\n\n"
+                "😊 **واکنش‌های خودکار:**\n"
+                "• ایموجی سفارشی | واکنش به کلمات\n\n"
+                "🛡️ **حفاظت امنیتی:**\n"
+                "• ضد ورود | ضد ریفرش | ضد کپی\n\n"
+                "📋 **لیست‌های سفارشی:**\n"
+                "• دشمن‌ها | دوستان | عاشقی | مسدود‌شدگان\n\n"
+                f"💎 **موجودی شما:** {user_db.gems} جم"
+            )
+            
+            await event.edit(features, buttons=[[Button.inline('🏠 بازگشت', b'back_start')]])
+
+        @bot.on(events.CallbackQuery(data=b'balance'))
+        async def balance_callback(event):
+            """نمایش موجودی جم"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            sender = await event.get_sender()
+            
+            if not user_db:
+                user_db = User(
+                    telegram_id=user_id,
+                    admin_id=1,
+                    phone_number="",
+                    username=sender.username or "",
+                    first_name=sender.first_name or ""
+                )
+                user_db.save()
+            
+            status = "✅ سلف فعال" if user_db.is_authenticated else "⏳ منتظر فعال‌سازی"
+            text = (
+                f"💎 **موجودی جم شما:**\n\n"
+                f"👤 **نام:** {sender.first_name}\n"
+                f"💎 **جم:** {user_db.gems}\n"
+                f"📊 **وضعیت:** {status}\n\n"
+                f"دستورات:\n"
+                f"• `bet X` - قمار در گروه‌ها"
+            )
+            
+            await event.edit(text, buttons=[[Button.inline('🏠 بازگشت', b'back_start')]])
+
+        @bot.on(events.CallbackQuery(data=b'admin_stats'))
+        async def admin_stats_callback(event):
+            """نمایش آمار کاربران برای ادمین"""
+            total_users = len(User.objects.all())
+            pending_users = len(User.objects(is_authenticated=False).all())
+            auth_users = len(User.objects(is_authenticated=True).all())
+            total_gems = sum([u.gems for u in User.objects.all()])
+            pending_payments = len(Payment.objects(status='pending').all())
+            
+            stats = (
+                f"📊 **آمار سیستم:**\n\n"
+                f"📈 **کاربران:**\n"
+                f"• کل: {total_users}\n"
+                f"• در انتظار: {pending_users}\n"
+                f"• فعال: {auth_users}\n\n"
+                f"💎 **جم‌ها:**\n"
+                f"• کل جم‌های سیستم: {total_gems}\n\n"
+                f"💳 **پرداخت:**\n"
+                f"• درخواست‌های معلق: {pending_payments}"
+            )
+            
+            await event.edit(stats, buttons=[[Button.inline('🏠 بازگشت', b'back_start')]])
+
+        @bot.on(events.CallbackQuery(data=b'back_start'))
+        async def back_start_callback(event):
+            """بازگشت به /start"""
+            await event.delete()
+            sender = await event.get_sender()
+            user_id = sender.id
+            
+            # اجرای مجدد start_handler
+            class FakeEvent:
+                async def get_sender(self):
+                    return sender
+                async def respond(self, text, buttons):
+                    await event.client.send_message(user_id, text, buttons=buttons)
+                    
+            fake_event = FakeEvent()
+            # فراخوان مجدد دستور /start
+            await event.client.send_message(user_id, "🏠 بازگشت به منوی اصلی", buttons=[])
+            # ارسال منوی اصلی
+            admin_db = Admin.objects.first()
+            is_admin = admin_db and admin_db.telegram_id == user_id
+            user_db = User.objects(telegram_id=user_id).first()
+            is_authenticated = user_db and user_db.is_authenticated
+            
+            if is_admin:
+                domain = "https://dark-self.onrender.com/auth/admin/login"
+                buttons = [
+                    [Button.url('🌐 پنل مدیریت ادمین', domain)],
+                    [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
+                    [Button.inline('📣 پیام همگانی', b'admin_broadcast')],
+                    [Button.inline('📊 مشاهده آمار', b'admin_stats')]
+                ]
+                text = f"👑 **سلام ادمین!**\n\n🎛️ **دستورات موجود** در بالا"
+            elif is_authenticated:
+                buttons = [
+                    [Button.inline('🚀 پنل قابلیت‌های سلف', b'self_panel')],
+                    [Button.inline('💎 خریدن جم', b'buy_gems')],
+                    [Button.inline('📊 موجودی', b'balance')]
+                ]
+                text = f"✅ **سلام!** سلف شما فعال است"
+            else:
+                buttons = [
+                    [Button.inline('💎 خریدن جم', b'buy_gems')],
+                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
+                    [Button.inline('📊 موجودی', b'balance')]
+                ]
+                text = f"👋 **سلام!** خوش آمدید"
+            
+            await event.client.send_message(user_id, text, buttons=buttons)
 
         @bot.on(events.CallbackQuery(data=b'start_login'))
         async def login_callback(event):
@@ -3854,11 +4107,11 @@ if __name__ == '__main__':
 ║  📍 Server: https://dark-self.onrender.com/                  ║
 ║  🚪 Login: https://dark-self.onrender.com//auth/admin/login  ║
 ║  👤 Default: admin / admin123                                ║
-║                                                              ║
-║  🗄️ Database: MongoDB Connected                              ║
-║  🔄 Scheduler: APScheduler Active                            ║
-║  💎 Payment: Toman-based Gem System                          ║
-║  🌐 Telethon: Running Async Background Event Loop            ║
+║                                                                ║
+║  🗄️ Database: MongoDB Connected                                ║
+║  🔄 Scheduler: APScheduler Active                              ║
+║  💎 Payment: Toman-based Gem System                            ║
+║  🌐 Telethon: Running Async Background Event Loop              ║
 ╚════════════════════════════════════════════════════════════════╝
     """)
     
