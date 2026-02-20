@@ -32,31 +32,29 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from telethon import TelegramClient, events, functions, types
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
+from telethon.tl.custom import Button
 
 load_dotenv()
 
 # ============ CONFIGURATION ============
 class Config:
     """Base configuration"""
-    MONGODB_URI = os.getenv(
-        'MONGODB_URI',
-        'mongodb+srv://ehsanpoint_db_user:nz7eUwWT8chu5Wpb@cluster0test.bmg2cu2.mongodb.net/?appName=Cluster0Test'
-    )
-    MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME', 'Dragon_self_bot')
-    API_ID = int(os.getenv('API_ID', '9536480'))
-    API_HASH = os.getenv('API_HASH', '4e52f6f12c47a0da918009260b6e3d44')
-    BOT_TOKEN = os.getenv('BOT_TOKEN', '8294693574:AAHFBuO6qlrBkAEEo0zFq0ViN26GfLuIEUU')
-    ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'meta')
-    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'Ehsan138813')
-    GEM_PRICE_TOMAN = int(os.getenv('GEM_PRICE_TOMAN', '40'))
-    MINIMUM_GEMS = int(os.getenv('MINIMUM_GEMS', '80'))
-    GEMS_PER_HOUR = int(os.getenv('GEMS_PER_HOUR', '2'))
-    BANK_CARD_NUMBER = os.getenv('BANK_CARD_NUMBER', '6219861956353857')
-    BANK_ACCOUNT_NAME = os.getenv('BANK_ACCOUNT_NAME', 'احسان حسین زاده')
-    SECRET_KEY = os.getenv('SECRET_KEY', 'akjsbdojbuiawjb123y81313')
+    MONGODB_URI = 'mongodb+srv://ehsanpoint_db_user:nz7eUwWT8chu5Wpb@cluster0test.bmg2cu2.mongodb.net/?appName=Cluster0Test'
+    MONGODB_DB_NAME = 'Dragon_self_bot'
+    API_ID = 9536480
+    API_HASH = '4e52f6f12c47a0da918009260b6e3d44'
+    BOT_TOKEN = '8294693574:AAHFBuO6qlrBkAEEo0zFq0ViN26GfLuIEUU'
+    ADMIN_USERNAME = 'meta'
+    ADMIN_PASSWORD = 'Ehsan138813'
+    GEM_PRICE_TOMAN = 40
+    MINIMUM_GEMS = 80
+    GEMS_PER_HOUR = 2
+    BANK_CARD_NUMBER = '6219861956353857'
+    BANK_ACCOUNT_NAME = 'احسان حسین زاده'
+    SECRET_KEY = 'akjsbdojbuiawjb123y81313'
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
-    MAX_AUTO_ACTIONS = int(os.getenv('MAX_AUTO_ACTIONS', '10'))
+    MAX_AUTO_ACTIONS = 10
     BOT_NAME = 'Dragon SELF BOT'
     BOT_VERSION = '2.0.0'
 
@@ -691,12 +689,117 @@ class TelethonManager:
                     await msg.delete()
                 return
 
-            # Lists (Enemy, Friend, Crush) -> simplified toggles
-            if re.match(r'^(دشمن|دوست) (روشن|خاموش)$', text):
+            # Lists (Enemy, Friend, Crush) - Full Logic
+            if re.match(r'^(دشمن|دوست|کراش) (روشن|خاموش)$', text):
+                lst_type = text.split()[0]
                 state = 'روشن' in text
-                lst_type = "دشمن" if "دشمن" in text else "دوست"
-                await event.edit(f"✅ لیست {lst_type} {'فعال' if state else 'غیرفعال'} شد.")
+                key = 'enemy_enabled' if lst_type == 'دشمن' else ('friend_enabled' if lst_type == 'دوست' else 'crush_enabled')
+                toggle_setting(key, state)
+                await event.edit(f"✅ پاسخ خودکار لیست {lst_type} {'فعال' if state else 'غیرفعال'} شد.")
                 return
+            
+            async def manage_list_target(event, text, action, list_type, model_class):
+                if not event.is_reply:
+                    await event.edit("❌ لطفا روی پیام شخص مورد نظر ریپلای کنید.")
+                    return
+                reply = await event.get_reply_message()
+                target_id = reply.sender_id
+                
+                if action == 'add':
+                    existing = model_class.objects(user_id=user.id, target_id=target_id).first()
+                    if not existing:
+                        model_class(user_id=user.id, target_id=target_id).save()
+                    await event.edit(f"✅ کاربر به لیست {list_type} اضافه شد.")
+                elif action == 'remove':
+                    model_class.objects(user_id=user.id, target_id=target_id).delete()
+                    await event.edit(f"✅ کاربر از لیست {list_type} حذف شد.")
+
+            # Enemy Commands
+            if text == 'تنظیم دشمن' or text == 'افزودن دشمن':
+                await manage_list_target(event, text, 'add', 'دشمن', EnemyList)
+                return
+            if text == 'حذف دشمن':
+                await manage_list_target(event, text, 'remove', 'دشمن', EnemyList)
+                return
+            if text == 'پاکسازی لیست دشمن':
+                EnemyList.objects(user_id=user.id).delete()
+                await event.edit("✅ لیست دشمن پاکسازی شد.")
+                return
+            if text == 'لیست دشمن':
+                enemies = EnemyList.objects(user_id=user.id).all()
+                msg = "📜 **لیست دشمنان:**\n" + "\n".join([f"🔸 `{e.target_id}`" for e in enemies])
+                await event.edit(msg if enemies else "لیست دشمن خالی است.")
+                return
+
+            # Friend Commands
+            if text == 'تنظیم دوست' or text == 'افزودن دوست':
+                await manage_list_target(event, text, 'add', 'دوست', FriendList)
+                return
+            if text == 'حذف دوست':
+                await manage_list_target(event, text, 'remove', 'دوست', FriendList)
+                return
+            if text == 'پاکسازی لیست دوست':
+                FriendList.objects(user_id=user.id).delete()
+                await event.edit("✅ لیست دوست پاکسازی شد.")
+                return
+            if text == 'لیست دوست':
+                friends = FriendList.objects(user_id=user.id).all()
+                msg = "📜 **لیست دوستان:**\n" + "\n".join([f"🔸 `{f.target_id}`" for f in friends])
+                await event.edit(msg if friends else "لیست دوست خالی است.")
+                return
+
+            # Crush Commands
+            if text == 'افزودن کراش' or text == 'تنظیم کراش':
+                await manage_list_target(event, text, 'add', 'کراش', CrushList)
+                return
+            if text == 'حذف کراش':
+                await manage_list_target(event, text, 'remove', 'کراش', CrushList)
+                return
+            if text == 'پاکسازی لیست کراش':
+                CrushList.objects(user_id=user.id).delete()
+                await event.edit("✅ لیست کراش پاکسازی شد.")
+                return
+            if text == 'لیست کراش':
+                crushes = CrushList.objects(user_id=user.id).all()
+                msg = "📜 **لیست کراش‌ها:**\n" + "\n".join([f"🔸 `{c.target_id}`" for c in crushes])
+                await event.edit(msg if crushes else "لیست کراش خالی است.")
+                return
+
+            # Texts Management
+            def manage_list_texts(text, list_type, settings_key):
+                if settings_key not in user.self_settings:
+                    user.self_settings[settings_key] = []
+                
+                if text.startswith(f'تنظیم متن {list_type} '):
+                    new_msg = text.replace(f'تنظیم متن {list_type} ', '').strip()
+                    user.self_settings[settings_key].append(new_msg)
+                    user.save()
+                    return f"✅ متن به لیست پاسخ‌های {list_type} اضافه شد."
+                
+                elif text == f'لیست متن {list_type}':
+                    texts = user.self_settings[settings_key]
+                    if not texts: return f"لیست متن {list_type} خالی است."
+                    return f"📜 **متن‌های {list_type}:**\n" + "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
+                
+                elif text.startswith(f'حذف متن {list_type} '):
+                    try:
+                        idx = int(text.split()[-1]) - 1
+                        if 0 <= idx < len(user.self_settings[settings_key]):
+                            removed = user.self_settings[settings_key].pop(idx)
+                            user.save()
+                            return f"✅ متن زیر حذف شد:\n{removed}"
+                        else:
+                            return "❌ شماره نامعتبر است."
+                    except:
+                        return "❌ فرمت دستور اشتباه است."
+                return None
+
+            for l_type, s_key in [('دشمن', 'enemy_texts'), ('دوست', 'friend_texts'), ('کراش', 'crush_texts')]:
+                if text.startswith(f'تنظیم متن {l_type}') or text.startswith(f'لیست متن {l_type}') or text.startswith(f'حذف متن {l_type}'):
+                    res = manage_list_texts(text, l_type, s_key)
+                    if res:
+                        await event.edit(res)
+                        return
 
             # Fun Animations
             fun_commands = ['قلب', 'heart', 'فان love', 'fun love', 'فان oclock', 'fun oclock', 'فان star', 'فان snow']
@@ -802,6 +905,37 @@ class TelethonManager:
             if should_edit and new_text != event.raw_text:
                 await event.edit(new_text)
 
+
+        # ---------------- Auto-Reply for Lists (Enemy, Friend, Crush) ----------------
+        @client.on(events.NewMessage(incoming=True))
+        async def handle_incoming_lists(event):
+            user = User.objects(telegram_id=user_id).first()
+            if not user or not event.sender_id:
+                return
+            
+            sender_id = event.sender_id
+            import random
+            
+            # Enemy logic
+            if user.self_settings.get('enemy_enabled'):
+                if EnemyList.objects(user_id=user.id, target_id=sender_id).first():
+                    texts = user.self_settings.get('enemy_texts', [])
+                    if texts:
+                        await event.reply(random.choice(texts))
+                        
+            # Friend logic
+            if user.self_settings.get('friend_enabled'):
+                if FriendList.objects(user_id=user.id, target_id=sender_id).first():
+                    texts = user.self_settings.get('friend_texts', [])
+                    if texts:
+                        await event.reply(random.choice(texts))
+
+            # Crush logic
+            if user.self_settings.get('crush_enabled'):
+                if CrushList.objects(user_id=user.id, target_id=sender_id).first():
+                    texts = user.self_settings.get('crush_texts', [])
+                    if texts:
+                        await event.reply(random.choice(texts))
 
         # ---------------- 2. Incoming PV Interceptor (Locks & Auto-Seen) ----------------
         @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
@@ -1108,8 +1242,8 @@ def create_app():
     try:
         if Admin.objects.count() == 0:
             admin = Admin(
-                username='admin',
-                password_hash=generate_password_hash('admin123'),
+                username=Config.ADMIN_USERNAME,
+                password_hash=generate_password_hash(Config.ADMIN_PASSWORD),
                 is_active=True
             )
             admin.save()
@@ -1134,6 +1268,10 @@ def create_app():
             if 'admin_id' not in session:
                 return redirect(url_for('admin_login'))
     
+    @app.route('/')
+    def index():
+        return redirect(url_for('admin_login'))
+
     # ============ AUTH ROUTES ============
     
     @app.route('/auth/admin/login', methods=['GET', 'POST'])
@@ -1172,10 +1310,9 @@ def create_app():
     @app.route('/admin/dashboard')
     @admin_required
     def dashboard():
-        admin_id = ObjectId(session.get('admin_id'))
-        users_count = User.objects(admin_id=admin_id).count()
+        users_count = User.objects.count()
         pending_payments = Payment.objects(status='pending').count()
-        users_data = list(User.objects(admin_id=admin_id).all())
+        users_data = list(User.objects.all())
         discounts = list(DiscountCode.objects().all())
         
         return render_template_string(DASHBOARD_TEMPLATE, 
@@ -1188,8 +1325,8 @@ def create_app():
     @app.route('/admin/settings', methods=['GET', 'POST'])
     @admin_required
     def settings():
-        admin_id = ObjectId(session.get('admin_id'))
-        admin = Admin.objects(id=admin_id).first()
+        admin_id_str = session.get('admin_id')
+        admin = Admin.objects(id=ObjectId(admin_id_str)).first()
         
         if request.method == 'POST':
             data = request.get_json()
@@ -1215,8 +1352,7 @@ def create_app():
     @app.route('/admin/users', methods=['GET'])
     @admin_required
     def users_list():
-        admin_id = ObjectId(session.get('admin_id'))
-        users = User.objects(admin_id=admin_id).all()
+        users = User.objects.all()
         return jsonify({
             'users': [{
                 'id': str(u.id),
@@ -2233,8 +2369,7 @@ DASHBOARD_TEMPLATE = '''
 </html>
 '''
 
-
-# ============ ASYNC RUNNER FOR TELETHON ============
+# ============ MAIN BOT & ASYNC RUNNER FOR TELETHON ============
 def run_telethon_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -2243,6 +2378,185 @@ def run_telethon_loop():
     global GLOBAL_TELETHON_MANAGER
     GLOBAL_TELETHON_MANAGER = manager
     
+    async def main_bot_logic():
+        # پاکسازی خودکار وب‌هوک برای جلوگیری از تداخل و کار نکردن ربات
+        try:
+            requests.get(f"https://api.telegram.org/bot{Config.BOT_TOKEN}/deleteWebhook")
+            print("[+] Webhook cleared automatically.")
+        except Exception as e:
+            print(f"[-] Error clearing webhook: {e}")
+
+        bot = TelegramClient('bot_session', Config.API_ID, Config.API_HASH)
+        await bot.start(bot_token=Config.BOT_TOKEN)
+        print("[+] Main Bot Interface Started!")
+
+        LOGIN_STATES = {}
+
+        @bot.on(events.NewMessage(pattern='/start'))
+        async def start_handler(event):
+            sender = await event.get_sender()
+            user_id = sender.id
+            username = sender.username or ""
+
+            admin_db = Admin.objects.first()
+            is_admin = False
+            if admin_db:
+                if admin_db.telegram_id == user_id:
+                    is_admin = True
+                elif admin_db.username.lower() == username.lower() or Config.ADMIN_USERNAME.lower() == username.lower():
+                    is_admin = True
+                    admin_db.telegram_id = user_id
+                    admin_db.save()
+
+            buttons = []
+            if is_admin:
+                # جایگذاری دامنه خودتان برای وب‌اپلیکیشن (حتما باید HTTPS باشد)
+                domain = "https://your-domain.com/auth/admin/login" 
+                buttons.append([Button.web_app('🌐 پنل مدیریت ادمین', domain)])
+                buttons.append([Button.inline('🚀 فعال‌سازی سلف (رایگان ادمین)', b'start_login')])
+                text = "👑 **سلام ادمین عزیز!**\nبه ربات مدیریت سلف‌بات خوش آمدید. از طریق وب‌اپلیکیشن زیر پنل خود را مدیریت کنید."
+            else:
+                buttons.append([Button.inline('🚀 شروع فعال‌سازی سلف بات', b'start_login')])
+                text = "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n🔹 برای فعال‌سازی سلف‌بات، ابتدا باید جم خریداری کنید و سپس لاگین نمایید."
+
+            await event.respond(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'start_login'))
+        async def login_callback(event):
+            user_id = event.sender_id
+            username = (await event.get_sender()).username or ""
+            
+            admin_db = Admin.objects.first()
+            is_admin = False
+            if admin_db and (admin_db.telegram_id == user_id or admin_db.username.lower() == username.lower() or Config.ADMIN_USERNAME.lower() == username.lower()):
+                is_admin = True
+
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not is_admin:
+                min_gems = admin_db.settings.minimum_gems_activate if (admin_db and admin_db.settings) else 80
+                if not user_db or user_db.gems < min_gems:
+                    await event.answer(f"❌ شما جم کافی ندارید!\n حداقل {min_gems} جم برای لاگین نیاز است.", alert=True)
+                    return
+
+            LOGIN_STATES[user_id] = {'step': 'phone'}
+            await event.edit("📱 **لطفا شماره تلفن اکانت تلگرام خود را همراه با کد کشور ارسال کنید:**\n\nمثال: `+989123456789`")
+
+        @bot.on(events.NewMessage())
+        async def handle_login_steps(event):
+            if event.text.startswith('/'): return
+            
+            user_id = event.sender_id
+            state = LOGIN_STATES.get(user_id)
+            if not state: return
+
+            if state['step'] == 'phone':
+                phone = event.text.strip()
+                msg = await event.respond("⏳ در حال درخواست کد از تلگرام...")
+                
+                client = TelegramClient(StringSession(), Config.API_ID, Config.API_HASH)
+                await client.connect()
+                
+                try:
+                    send_code = await client.send_code_request(phone)
+                    state['step'] = 'code'
+                    state['phone'] = phone
+                    state['phone_code_hash'] = send_code.phone_code_hash
+                    state['client'] = client
+                    
+                    await msg.edit(
+                        "✅ **کد تایید به تلگرام شما ارسال شد.**\n\n"
+                        "⚠️ **توجه بسیار مهم:** ⚠️\n"
+                        "برای اینکه تلگرام کد شما را مسدود نکند، حتماً کد را **با فاصله** یا **نقطه‌دار** ارسال کنید.\n\n"
+                        "👇 **مثلاً اگر کد شما `12345` است، دقیقاً اینطوری بفرستید:**\n"
+                        "`1.2.3.4.5`  یا  `1 2 3 4 5`"
+                    )
+                except Exception as e:
+                    await msg.edit(f"❌ خطا در ارسال کد: {e}")
+                    del LOGIN_STATES[user_id]
+                    await client.disconnect()
+
+            elif state['step'] == 'code':
+                # پاکسازی کد از نقطه‌ها و فاصله‌ها
+                raw_code = event.text.strip()
+                clean_code = raw_code.replace('.', '').replace(' ', '').replace('-', '')
+                
+                if not clean_code.isdigit():
+                    await event.respond("❌ کد نامعتبر است. فقط اعداد را با نقطه یا فاصله ارسال کنید.")
+                    return
+                
+                client = state['client']
+                try:
+                    await client.sign_in(phone=state['phone'], code=clean_code, phone_code_hash=state['phone_code_hash'])
+                    await finalize_login(user_id, client, event, state)
+                except SessionPasswordNeededError:
+                    state['step'] = 'password'
+                    await event.respond("🔐 **اکانت شما دارای تایید دو مرحله‌ای است.**\nلطفاً رمز عبور اکانت خود را ارسال کنید:")
+                except Exception as e:
+                    await event.respond(f"❌ کد وارد شده اشتباه یا منقضی است: {e}")
+                    del LOGIN_STATES[user_id]
+                    await client.disconnect()
+
+            elif state['step'] == 'password':
+                password = event.text.strip()
+                client = state['client']
+                try:
+                    await client.sign_in(password=password)
+                    await finalize_login(user_id, client, event, state)
+                except Exception as e:
+                    await event.respond("❌ رمز عبور اشتباه است، لطفا دوباره تلاش کنید.")
+
+        async def finalize_login(user_id, client, event, state):
+            session_string = client.session.save()
+            me = await client.get_me()
+            
+            admin_db = Admin.objects.first()
+            admin_id = admin_db.telegram_id if admin_db and admin_db.telegram_id else 1
+            
+            user_db = User.objects(telegram_id=user_id).first()
+            if not user_db:
+                user_db = User(
+                    admin_id=admin_id,
+                    telegram_id=user_id,
+                    phone_number=state.get('phone', ''),
+                    username=me.username,
+                    first_name=me.first_name,
+                    is_authenticated=True,
+                    time_enabled=True
+                )
+            
+            user_db.is_authenticated = True
+            
+            username = (await event.get_sender()).username or ""
+            is_admin = False
+            if admin_db and (admin_db.telegram_id == user_id or admin_db.username.lower() == username.lower() or Config.ADMIN_USERNAME.lower() == username.lower()):
+                is_admin = True
+                
+            # کسر کردن جم فقط برای کاربران عادی
+            if not is_admin:
+                min_gems = admin_db.settings.minimum_gems_activate if admin_db else 80
+                user_db.gems -= min_gems
+                user_db.gems_spent += min_gems
+                
+            user_db.save()
+            
+            sess_db = UserSession.objects(user_id=user_id).first()
+            if not sess_db:
+                sess_db = UserSession(user_id=user_id, session_string=session_string)
+            else:
+                sess_db.session_string = session_string
+                sess_db.is_active = True
+            sess_db.save()
+            
+            await event.respond("✅ **لاگین با موفقیت انجام شد!**\nسلف‌بات شما فعال گردید. کلمه `پنل` را در بخش پیام‌های ذخیره شده خود ارسال کنید تا پنل کاربری برای شما باز شود. 🎉")
+            del LOGIN_STATES[user_id]
+            
+            if GLOBAL_TELETHON_MANAGER:
+                await GLOBAL_TELETHON_MANAGER.start_client(user_id, session_string)
+
+        # جلوگیری از بسته شدن سشن ربات اصلی و فعال نگه داشتن آن برای دریافت پیام‌ها
+        await bot.run_until_disconnected()
+
     async def check_users_periodically():
         while True:
             try:
@@ -2257,8 +2571,9 @@ def run_telethon_loop():
                 print(f"Error checking DB for users: {e}")
             await asyncio.sleep(10)
             
+    loop.create_task(main_bot_logic())
     loop.create_task(check_users_periodically())
-    print("[+] Telethon loop started.")
+    print("[+] Telethon event loop started.")
     loop.run_forever()
 
 
@@ -2277,7 +2592,6 @@ if __name__ == '__main__':
 ║    ✓ Auto Translation (Multi-language support)               ║
 ║    ✓ Auto Reactions (Custom emoji reactions)                 ║
 ║    ✓ Anti-Login Protection (Security feature)                ║
-║    ✓ AI Secretary (Auto-reply with AI)                       ║
 ║    ✓ Block/Mute Lists (User management)                      ║
 ║    ✓ Payment System (Gems-based)                             ║
 ║    ✓ Admin Panel (Complete control)                          ║
