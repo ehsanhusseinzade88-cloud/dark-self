@@ -1,0 +1,361 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║           🌟 DARK SELF BOT - QUICK START GUIDE 🌟                ║
+║             ربات خودکار تلگرام با قابلیت‌های پیشرفته             ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+======================== 📋 STEP-BY-STEP SETUP ========================
+
+STEP 1: Install Python Dependencies
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run in terminal (PowerShell):
+
+    cd c:\Users\msi\Desktop\selfpython
+    pip install -r requirements.txt
+
+Wait for all packages to install... ⏳
+
+
+STEP 2: Get Telegram API Credentials
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Go to: https://my.telegram.org
+2. Sign in with your phone number
+3. Click "API development tools"
+4. Create an app (if not already created)
+5. Copy your API_ID and API_HASH
+
+
+STEP 3: Configure .env File
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Open .env file in text editor
+2. Add your values:
+
+   API_ID=<your_api_id>
+   API_HASH=<your_api_hash>
+   BOT_TOKEN=<your_bot_token>
+   ADMIN_PASSWORD=<new_secure_password>
+   BANK_CARD_NUMBER=<your_bank_card>
+
+3. Save the file
+
+
+STEP 4: Initialize Database
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run in PowerShell:
+
+    python setup.py
+
+This will:
+✅ Create database tables
+✅ Create default admin user
+✅ Configure the system
+
+
+STEP 5: Start the Application
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Run in PowerShell:
+
+    python app.py
+
+You should see:
+    * Running on http://0.0.0.0:5000
+    * Debug mode: on
+
+
+STEP 6: Access Admin Panel
+━━━━━━━━━━━━━━━━━━━━━━━━━
+Open your browser and go to:
+
+    http://localhost:5000/auth/admin/login
+
+Login with:
+    Username: admin
+    Password: <the_password_you_set_in_step_3>
+
+
++=============================================================================+
+
+
+🎯 WHAT YOU CAN DO NOW:
+
+1. 📱 User Management
+   - Register new users
+   - Track user gems and balance
+   - View user statistics
+   - Manage user features
+
+2. 💳 Payment System
+   - Approve/reject gem purchases
+   - View pending payments
+   - Manage pricing and settings
+   - Configure bank details
+
+3. 🤖 Bot Features
+   - Toggle text formatting
+   - Set auto-reactions
+   - Configure media locks
+   - Manage user lists (enemies, friends, crushes)
+   - Enable translations
+
+4. 🛠️ Admin Settings
+   - Change gem prices
+   - Configure minimum gems
+   - Set subscription requirements
+   - Manage system features
+
+
++=============================================================================+
+
+
+📌 API ENDPOINTS QUICK REFERENCE:
+
+Authentication:
+  POST /auth/admin/login
+  POST /auth/user/register
+  POST /auth/user/verify-code
+  POST /auth/admin/logout
+
+Admin Functions:
+  GET  /admin/dashboard          # View statistics
+  GET  /admin/users              # List all users
+  GET  /admin/payments           # List pending payments
+  POST /admin/payment/{id}/approve
+  POST /admin/payment/{id}/reject
+  POST /admin/user/{id}/gems
+
+User Features:
+  POST /user/{id}/text-format
+  POST /user/{id}/media-lock
+  POST /user/{id}/status-action
+  POST /user/{id}/translation
+  POST /user/{id}/comment
+  POST /user/{id}/secretary
+  POST /user/{id}/anti-login
+  POST /user/{id}/auto-reaction
+
+List Management:
+  GET  /user/{id}/enemy-list
+  POST /user/{id}/enemy-list
+  GET  /user/{id}/friend-list
+  POST /user/{id}/friend-list
+  GET  /user/{id}/crush-list
+  POST /user/{id}/crush-list
+
+Payment:
+  POST /payment/buy-gems
+  POST /payment/{id}/upload-receipt
+  GET  /payment/{id}/status
+
+
++=============================================================================+
+
+
+✅ TESTING THE API:
+
+Run API examples to test all endpoints:
+
+    python api_examples.py
+
+This will:
+- Login as admin
+- Register a test user
+- Test all features
+- Create a test payment
+
+
++=============================================================================+
+
+
+🔒 SECURITY CHECKLIST (BEFORE PRODUCTION):
+
+☐ Change admin password in .env
+☐ Change SECRET_KEY to a random string
+☐ Set SESSION_COOKIE_SECURE=true (requires HTTPS)
+☐ Switch DATABASE_URL to PostgreSQL (not SQLite)
+☐ Review CORS configuration in app.py
+☐ Add proper SSL/TLS certificate
+☐ Review firewall rules
+☐ Setup backup strategy
+☐ Enable HTTPS only
+☐ Regular security updates
+
+
++=============================================================================+
+
+
+📂 PROJECT STRUCTURE:
+
+selfpython/
+├── app.py                  # Flask app factory (RUN THIS)
+├── config.py               # Configuration
+├── models.py               # Database models
+├── routes.py               # API endpoints
+├── self.py                 # Self-bot handler
+├── payment_handler.py      # Payment logic
+├── telegram_auth.py        # Telegram auth
+├── utils.py                # Helper functions
+├── setup.py                # First-time setup
+├── api_examples.py         # API usage examples
+├── requirements.txt        # Dependencies
+├── .env.example            # Config template
+├── .env                    # Your config (create this)
+├── README.md               # Full documentation
+└── templates/
+    ├── admin_login.html
+    └── admin_dashboard.html
+
+
++=============================================================================+
+
+
+🚨 COMMON ISSUES & FIXES:
+
+Issue: "ModuleNotFoundError: No module named 'flask'"
+Fix: pip install -r requirements.txt
+
+Issue: "Address already in use"
+Fix: Change port in app.py or close other instance
+
+Issue: "Database is locked"
+Fix: Restart the application
+
+Issue: "Can't connect to Telegram"
+Fix: Check API_ID, API_HASH, and bot token are correct
+
+Issue: "Admin login fails"
+Fix: Check you used correct password from .env
+
+
++=============================================================================+
+
+
+📞 FILE DESCRIPTIONS:
+
+app.py
+  ↳ Main Flask application factory
+  ↳ Initializes database and blueprints
+  ↳ Handles authentication decorators
+  ↳ RUN THIS FILE TO START THE BOT
+
+routes.py
+  ↳ All API endpoints (auth, admin, user, payment)
+  ↳ Request handlers
+  ↳ Response formatting
+
+models.py
+  ↳ Database schema
+  ↳ User, Admin, Payment, Feature models
+  ↳ List management models
+
+self.py
+  ↳ Core self-bot handler
+  ↳ Message processing
+  ↳ Feature automation
+  ↳ Telegram client wrapper
+
+payment_handler.py
+  ↳ Gem system logic
+  ↳ Payment management
+  ↳ Gem deduction scheduler
+
+config.py
+  ↳ Configuration classes
+  ↳ Environment variable management
+  ↳ Default settings
+
+utils.py
+  ↳ Utility functions and helpers
+  ↳ Time formatting
+  ↳ Text processing
+  ↳ Arabic/Persian support
+
+
++=============================================================================+
+
+
+🎓 NEXT STEPS:
+
+1. Read README.md for detailed documentation
+2. Configure all settings in .env
+3. Test API with api_examples.py
+4. Create admin users if needed
+5. Setup payment verification system
+6. Deploy to production using proper WSGI server
+
+
++=============================================================================+
+
+
+📚 FEATURE DOCUMENTATION:
+
+Each major feature is documented in README.md:
+
+- Status & Actions (typing, playing, recording, etc.)
+- Text Formatting (bold, italic, underline, spoiler)
+- Auto Translation (English, Chinese, Russian, Arabic)
+- Media Locks (GIF, photo, video, voice, etc.)
+- Time Display (multiple fonts and calendars)
+- Message Management (delete, save, repeat)
+- User Lists (enemies, friends, crushes)
+- Comments & Secretary (auto-reply)
+- Advanced Security (anti-login, PV lock)
+- Admin Functions (user management, payments)
+
+
++=============================================================================+
+
+
+🌐 IMPORTANT URLS:
+
+Admin Login:
+  http://localhost:5000/auth/admin/login
+
+Admin Dashboard:
+  http://localhost:5000/admin/dashboard
+
+Admin Settings:
+  http://localhost:5000/admin/settings
+
+Payments List:
+  http://localhost:5000/admin/payments
+
+Users List:
+  http://localhost:5000/admin/users
+
+
++=============================================================================+
+
+
+💡 QUICK TIPS:
+
+✨ Default admin credentials:
+   User: admin
+   Pass: admin123 (CHANGE THIS!)
+
+✨ All requests expect JSON format
+✨ Use POST for data modification
+✨ Use GET for data retrieval
+✨ Check logs in terminal for debugging
+
+✨ Database file: self_bot.db
+✨ Sessions stored in Flask session
+✨ Logs appear in terminal
+
+
++=============================================================================+
+
+
+👥 SUPPORT & DOCUMENTATION:
+
+For detailed help, see:
+  - README.md ............ Full documentation
+  - api_examples.py ...... API usage examples
+  - This file ............ Quick start guide
+
+
+VERSION: 1.0.0
+LAST UPDATED: February 20, 2026
+
+╔═══════════════════════════════════════════════════════════════════╗
+║              ✅ YOU'RE READY TO GO! HAPPY CODING! ✅               ║
+║                     🚀 Start with: python app.py                 ║
+╚═══════════════════════════════════════════════════════════════════╝
