@@ -1,7 +1,7 @@
 """
 🌟 DRAGON SELF BOT - All-in-One Application v2.0 🌟
 یک ربات خودکار تلگرام با قابلیت‌های پیشرفته
-✨ All Features + Website + Payment System ✨
+✨ All Features + Website + Payment System + Telethon Handlers ✨
 """
 
 # ============ IMPORTS ============
@@ -21,8 +21,17 @@ import base64
 import jdatetime
 import pytz
 import json
+import re
+import asyncio
+import threading
+import requests
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
+
+# Telethon Imports
+from telethon import TelegramClient, events, functions, types
+from telethon.errors import SessionPasswordNeededError
+from telethon.sessions import StringSession
 
 load_dotenv()
 
@@ -49,7 +58,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
     MAX_AUTO_ACTIONS = int(os.getenv('MAX_AUTO_ACTIONS', '10'))
     BOT_NAME = 'Dragon SELF BOT'
-    BOT_VERSION = '1.0.0'
+    BOT_VERSION = '2.0.0'
 
 # ============ UTILITIES ============
 IRAN_TZ = pytz.timezone('Asia/Tehran')
@@ -87,6 +96,13 @@ MEDIA_LOCKS = {
     'video': '🔒 قفل ویدیو',
     'voice': '🔒 قفل ویس',
     'sticker': '🔒 قفل استیکر',
+    'file': '🔒 قفل فایل',
+    'music': '🔒 قفل موزیک',
+    'video_note': '🔒 قفل ویدیو نوت',
+    'contact': '🔒 قفل کانتکت',
+    'location': '🔒 قفل لوکیشن',
+    'emoji': '🔒 قفل ایموجی',
+    'text': '🔒 قفل متن'
 }
 
 STATUS_ACTIONS = {
@@ -103,7 +119,7 @@ def get_iran_now():
 def format_iran_time(dt=None, font_id=0):
     if dt is None:
         dt = get_iran_now()
-    time_str = dt.strftime('%H:%M:%S')
+    time_str = dt.strftime('%H:%M')
     if font_id in CHAR_MAP:
         return ''.join(CHAR_MAP[font_id].get(c, c) for c in time_str)
     return time_str
@@ -128,20 +144,34 @@ def format_date(date_type='jalali', dt=None, font_id=0):
         return ''.join(CHAR_MAP[font_id].get(c, c) for c in date_str)
     return date_str
 
-def apply_text_format(text, format_type):
-    format_type = format_type.lower()
-    if format_type == 'bold':
-        return f'**{text}**'
-    elif format_type == 'italic':
-        return f'__{text}__'
-    elif format_type == 'underline':
-        return f'__<u>{text}</u>__'
-    elif format_type == 'strikethrough':
-        return f'~~{text}~~'
-    elif format_type == 'monospace':
-        return f'`{text}`'
-    elif format_type == 'spoiler':
-        return f'||{text}||'
+def apply_text_format(text, formats_dict):
+    if formats_dict.get('reverse'):
+        text = text[::-1]
+    if formats_dict.get('bold'):
+        text = f'**{text}**'
+    if formats_dict.get('italic'):
+        text = f'__{text}__'
+    if formats_dict.get('underline'):
+        text = f'__<u>{text}</u>__'
+    if formats_dict.get('strikethrough'):
+        text = f'~~{text}~~'
+    if formats_dict.get('monospace'):
+        text = f'`{text}`'
+    if formats_dict.get('spoiler'):
+        text = f'||{text}||'
+    if formats_dict.get('quote'):
+        text = f'❝ {text} ❞'
+    return text
+
+def translate_text(text, target_lang='fa'):
+    # A simple fallback using free translation API format or Google Translate API
+    try:
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={target_lang}&dt=t&q={text}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            return ''.join([sentence[0] for sentence in response.json()[0]])
+    except Exception as e:
+        print(f"Translation error: {e}")
     return text
 
 def get_all_features_menu():
@@ -150,7 +180,6 @@ def get_all_features_menu():
 # ============ DATABASE MODELS ============
 
 class AdminSettings(EmbeddedDocument):
-    """Admin settings embedded in Admin document"""
     gem_price_toman = IntField(default=40)
     minimum_gems_activate = IntField(default=80)
     gems_per_hour = IntField(default=2)
@@ -164,7 +193,6 @@ class AdminSettings(EmbeddedDocument):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class Admin(Document):
-    """Admin User"""
     meta = {
         'collection': 'admins',
         'indexes': ['username', 'telegram_id']
@@ -178,7 +206,6 @@ class Admin(Document):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class User(Document):
-    """User Account"""
     meta = {
         'collection': 'users',
         'indexes': ['telegram_id', 'phone_number', 'admin_id']
@@ -196,7 +223,17 @@ class User(Document):
     features_enabled = DictField(default={})
     is_premium = BooleanField(default=False)
     premium_until = DateTimeField()
-    self_settings = DictField(default={})
+    self_settings = DictField(default={
+        # Additional state tracking to avoid external DB hits for fast toggles
+        'format_bold': False, 'format_italic': False, 'format_underline': False,
+        'format_strike': False, 'format_mono': False, 'format_spoiler': False,
+        'format_mention': False, 'format_quote': False, 'format_hashtag': False,
+        'format_reverse': False, 'format_gradual': False,
+        'status_typing': False, 'status_playing': False, 'status_voice': False, 
+        'status_photo': False, 'status_gif': False, 'status_seen': False,
+        'trans_english': False, 'trans_chinese': False, 'trans_russian': False,
+        'pv_lock': False, 'anti_login': False, 'secretary': False, 'comment': False
+    })
     time_enabled = BooleanField(default=False)
     time_font = IntField(default=0)
     bio_time_enabled = BooleanField(default=False)
@@ -211,7 +248,6 @@ class User(Document):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class UserSession(Document):
-    """User Telegram Session"""
     meta = {'collection': 'user_sessions', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     session_string = StringField(required=True)
@@ -223,7 +259,6 @@ class UserSession(Document):
     expires_at = DateTimeField()
 
 class Payment(Document):
-    """Payment Record"""
     meta = {
         'collection': 'payments',
         'indexes': ['user_id', 'status', 'created_at']
@@ -239,7 +274,6 @@ class Payment(Document):
     approved_at = DateTimeField()
 
 class UserTextFormat(Document):
-    """User Text Formatting Settings"""
     meta = {'collection': 'user_text_formats', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     format_type = StringField(required=True)
@@ -247,7 +281,6 @@ class UserTextFormat(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserMediaLock(Document):
-    """User Media Locks"""
     meta = {'collection': 'user_media_locks', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     media_type = StringField(required=True)
@@ -255,7 +288,6 @@ class UserMediaLock(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserStatusAction(Document):
-    """User Status and Action Settings"""
     meta = {'collection': 'user_status_actions', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     action_type = StringField(required=True)
@@ -263,7 +295,6 @@ class UserStatusAction(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserTranslation(Document):
-    """User Auto-Translation Settings"""
     meta = {'collection': 'user_translations', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     target_language = StringField(required=True)
@@ -271,7 +302,6 @@ class UserTranslation(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserComment(Document):
-    """User Comment/Reply Settings"""
     meta = {'collection': 'user_comments', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     is_enabled = BooleanField(default=False)
@@ -280,7 +310,6 @@ class UserComment(Document):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class UserSecretary(Document):
-    """User Secretary/Auto-Reply Settings"""
     meta = {'collection': 'user_secretaries', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     is_enabled = BooleanField(default=False)
@@ -290,7 +319,6 @@ class UserSecretary(Document):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class UserAntiLogin(Document):
-    """User Anti-Login Protection"""
     meta = {'collection': 'user_anti_logins', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     is_enabled = BooleanField(default=False)
@@ -298,7 +326,6 @@ class UserAntiLogin(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserAutoReaction(Document):
-    """User Auto-Reaction Settings"""
     meta = {'collection': 'user_auto_reactions', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     emoji = StringField(required=True)
@@ -306,7 +333,6 @@ class UserAutoReaction(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserLearning(Document):
-    """User AI Learning Data"""
     meta = {'collection': 'user_learning', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     input_text = StringField(required=True)
@@ -314,7 +340,6 @@ class UserLearning(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserBlock(Document):
-    """User Block List"""
     meta = {'collection': 'user_blocks', 'indexes': ['user_id', 'target_id']}
     user_id = IntField(required=True)
     target_id = IntField(required=True)
@@ -323,7 +348,6 @@ class UserBlock(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserMute(Document):
-    """User Mute List"""
     meta = {'collection': 'user_mutes', 'indexes': ['user_id', 'target_id']}
     user_id = IntField(required=True)
     target_id = IntField(required=True)
@@ -332,7 +356,6 @@ class UserMute(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class UserAnimationPreset(Document):
-    """User Animation Presets"""
     meta = {'collection': 'user_animation_presets', 'indexes': ['user_id']}
     user_id = IntField(required=True)
     preset_name = StringField(required=True)
@@ -340,7 +363,6 @@ class UserAnimationPreset(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class EnemyList(Document):
-    """Enemy List"""
     meta = {'collection': 'enemy_lists', 'indexes': ['user_id', 'target_id']}
     user_id = IntField(required=True)
     target_id = IntField(required=True)
@@ -350,7 +372,6 @@ class EnemyList(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class FriendList(Document):
-    """Friend List"""
     meta = {'collection': 'friend_lists', 'indexes': ['user_id', 'target_id']}
     user_id = IntField(required=True)
     target_id = IntField(required=True)
@@ -360,7 +381,6 @@ class FriendList(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class CrushList(Document):
-    """Crush List"""
     meta = {'collection': 'crush_lists', 'indexes': ['user_id', 'target_id']}
     user_id = IntField(required=True)
     target_id = IntField(required=True)
@@ -370,7 +390,6 @@ class CrushList(Document):
     created_at = DateTimeField(default=datetime.utcnow)
 
 class SubscriptionChannel(Document):
-    """Mandatory Subscription Channels"""
     meta = {
         'collection': 'subscription_channels',
         'indexes': ['admin_id', 'channel_id']
@@ -384,7 +403,6 @@ class SubscriptionChannel(Document):
     updated_at = DateTimeField(default=datetime.utcnow)
 
 class Report(Document):
-    """Report Management"""
     meta = {
         'collection': 'reports',
         'indexes': ['admin_id', 'target_id', 'status']
@@ -400,6 +418,346 @@ class Report(Document):
     delete_request_sent = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
+
+
+# ============ TELETHON CLIENT MANAGER ============
+
+class TelethonManager:
+    """Manager to handle Telethon clients based on UserSessions"""
+    def __init__(self):
+        self.clients = {}
+        self.loop = asyncio.get_event_loop()
+        
+    async def start_client(self, user_id, session_string):
+        if user_id in self.clients:
+            return
+            
+        try:
+            client = TelegramClient(StringSession(session_string), Config.API_ID, Config.API_HASH)
+            await client.connect()
+            if await client.is_user_authorized():
+                self.clients[user_id] = client
+                self.register_handlers(client, user_id)
+                print(f"[+] Client initialized for User ID: {user_id}")
+                
+                # Start background tasks (Clock/Bio updater)
+                self.loop.create_task(self.background_updater(client, user_id))
+            else:
+                print(f"[-] Client not authorized for User ID: {user_id}")
+        except Exception as e:
+            print(f"[-] Error starting client for {user_id}: {e}")
+
+    async def background_updater(self, client, user_id):
+        """Task to update Bio and Name with time if enabled"""
+        while True:
+            try:
+                user = User.objects(telegram_id=user_id).first()
+                if user and user.time_enabled:
+                    time_str = format_iran_time(font_id=user.time_font)
+                    if user.bio_time_enabled or user.bio_date_enabled:
+                        bio_text = ""
+                        if user.bio_time_enabled:
+                            bio_text += f"🕒 {time_str} "
+                        if user.bio_date_enabled:
+                            date_str = format_date(user.date_type, font_id=user.bio_time_font)
+                            bio_text += f"📅 {date_str}"
+                        await client(functions.account.UpdateProfileRequest(about=bio_text))
+                    
+                    # Update Name with time if requested
+                    # await client(functions.account.UpdateProfileRequest(first_name=f"{user.first_name} {time_str}"))
+            except Exception as e:
+                pass
+            await asyncio.sleep(60)
+
+    def register_handlers(self, client: TelegramClient, user_id):
+        
+        # ---------------- 1. Command Toggle Interceptor ----------------
+        @client.on(events.NewMessage(outgoing=True))
+        async def handle_commands(event):
+            text = event.raw_text.strip()
+            if not text:
+                return
+
+            user = User.objects(telegram_id=user_id).first()
+            if not user:
+                return
+
+            # Helper to update settings
+            def toggle_setting(key, state):
+                user.self_settings[key] = state
+                user.save()
+
+            # Status and Action Toggle
+            if re.match(r'^تایپ (روشن|خاموش)$', text):
+                state = 'روشن' in text
+                toggle_setting('status_typing', state)
+                await event.edit(f"✅ حالت تایپ خودکار {'فعال' if state else 'غیرفعال'} شد.")
+                return
+
+            if re.match(r'^بازی (روشن|خاموش)$', text):
+                state = 'روشن' in text
+                toggle_setting('status_playing', state)
+                await event.edit(f"✅ حالت بازی {'فعال' if state else 'غیرفعال'} شد.")
+                return
+
+            if re.match(r'^سین (روشن|خاموش)$', text):
+                state = 'روشن' in text
+                toggle_setting('status_seen', state)
+                await event.edit(f"✅ سین خودکار پیام‌ها {'فعال' if state else 'غیرفعال'} شد.")
+                return
+
+            # Text Formatting Toggle
+            formatting_commands = {
+                'بولد': 'format_bold', 'ایتالیک': 'format_italic', 'زیرخط': 'format_underline',
+                'خط خورده': 'format_strike', 'کد': 'format_mono', 'اسپویلر': 'format_spoiler',
+                'منشن': 'format_mention', 'نقل و قول': 'format_quote', 'هشتگ': 'format_hashtag',
+                'معکوس': 'format_reverse', 'تدریجی': 'format_gradual'
+            }
+            for cmd, key in formatting_commands.items():
+                if re.match(f'^{cmd} (روشن|خاموش)$', text):
+                    state = 'روشن' in text
+                    toggle_setting(key, state)
+                    await event.edit(f"✅ قالب‌بندی {cmd} {'فعال' if state else 'غیرفعال'} شد.")
+                    return
+
+            # Auto Translation
+            if re.match(r'^ترجمه$', text) and event.is_reply:
+                reply = await event.get_reply_message()
+                translated = translate_text(reply.text, 'fa')
+                await event.edit(f"**ترجمه:**\n{translated}")
+                return
+
+            trans_commands = {'انگلیسی': 'trans_english', 'چینی': 'trans_chinese', 'روسی': 'trans_russian'}
+            for cmd, key in trans_commands.items():
+                if re.match(f'^{cmd} (روشن|خاموش)$', text):
+                    state = 'روشن' in text
+                    toggle_setting(key, state)
+                    await event.edit(f"✅ ترجمه خودکار به {cmd} {'فعال' if state else 'غیرفعال'} شد.")
+                    return
+
+            # Media Lock in PV Toggle
+            if re.match(r'^قفل (گیف|عکس|ویدیو|ویس|استیکر|فایل|موزیک|ویدیو نوت|کانتکت|لوکیشن|ایموجی|متن) (روشن|خاموش)$', text):
+                match = re.match(r'^قفل (.+) (روشن|خاموش)$', text)
+                media_type = match.group(1)
+                state = match.group(2) == 'روشن'
+                
+                # Update UserMediaLock DB directly for persistence
+                lock_map = {'گیف': 'gif', 'عکس': 'photo', 'ویدیو': 'video', 'ویس': 'voice', 'استیکر': 'sticker',
+                            'فایل': 'file', 'موزیک': 'music', 'ویدیو نوت': 'video_note', 'کانتکت': 'contact',
+                            'لوکیشن': 'location', 'ایموجی': 'emoji', 'متن': 'text'}
+                
+                if media_type in lock_map:
+                    db_type = lock_map[media_type]
+                    lock = UserMediaLock.objects(user_id=user.id, media_type=db_type).first()
+                    if not lock:
+                        lock = UserMediaLock(user_id=user.id, media_type=db_type)
+                    lock.is_enabled = state
+                    lock.save()
+                    await event.edit(f"✅ قفل {media_type} در پیوی {'فعال' if state else 'غیرفعال'} شد.")
+                return
+
+            # Time and Font
+            if re.match(r'^ساعت (روشن|خاموش)$', text):
+                user.time_enabled = 'روشن' in text
+                user.save()
+                await event.edit(f"✅ ساعت در نام {'فعال' if 'روشن' in text else 'غیرفعال'} شد.")
+                return
+            
+            if re.match(r'^ساعت بیو (روشن|خاموش)$', text):
+                user.bio_time_enabled = 'روشن' in text
+                user.save()
+                await event.edit(f"✅ ساعت در بیو {'فعال' if 'روشن' in text else 'غیرفعال'} شد.")
+                return
+
+            if re.match(r'^تاریخ بیو (روشن|خاموش)$', text):
+                user.bio_date_enabled = 'روشن' in text
+                user.save()
+                await event.edit(f"✅ تاریخ در بیو {'فعال' if 'روشن' in text else 'غیرفعال'} شد.")
+                return
+
+            # Message Management
+            if text.startswith('حذف ') and text.split()[1].isdigit():
+                count = int(text.split()[1])
+                await event.delete()
+                msgs = await client.get_messages(event.chat_id, limit=count)
+                await client.delete_messages(event.chat_id, msgs)
+                return
+
+            if text == 'حذف همه':
+                await event.delete()
+                async for msg in client.iter_messages(event.chat_id, from_user='me'):
+                    await msg.delete()
+                return
+
+            # Lists (Enemy, Friend, Crush) -> simplified toggles
+            if re.match(r'^(دشمن|دوست) (روشن|خاموش)$', text):
+                state = 'روشن' in text
+                lst_type = "دشمن" if "دشمن" in text else "دوست"
+                await event.edit(f"✅ لیست {lst_type} {'فعال' if state else 'غیرفعال'} شد.")
+                return
+
+            # Fun Animations
+            fun_commands = ['قلب', 'heart', 'فان love', 'fun love', 'فان oclock', 'fun oclock', 'فان star', 'فان snow']
+            if text in fun_commands:
+                if 'قلب' in text or 'heart' in text:
+                    hearts = ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "❤️"]
+                    for h in hearts:
+                        await event.edit(h)
+                        await asyncio.sleep(0.3)
+                elif 'oclock' in text:
+                    clocks = ["🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚"]
+                    for c in clocks:
+                        await event.edit(c)
+                        await asyncio.sleep(0.2)
+                elif 'star' in text:
+                    stars = ["⭐", "🌟", "✨", "💫", "🌟", "⭐"]
+                    for s in stars:
+                        await event.edit(s)
+                        await asyncio.sleep(0.3)
+                elif 'snow' in text:
+                    snows = ["❄️", "🌨", "❄️", "⛄", "❄️"]
+                    for s in snows:
+                        await event.edit(s)
+                        await asyncio.sleep(0.4)
+                return
+
+            # Tools
+            if text in ['تگ', 'tagall']:
+                await event.delete()
+                async for user_obj in client.iter_participants(event.chat_id):
+                    if not user_obj.bot:
+                        await client.send_message(event.chat_id, f"[{user_obj.first_name}](tg://user?id={user_obj.id})")
+                return
+
+            if text in ['تگ ادمین ها', 'tagadmins']:
+                await event.delete()
+                async for admin_obj in client.iter_participants(event.chat_id, filter=types.ChannelParticipantsAdmins):
+                    await client.send_message(event.chat_id, f"[{admin_obj.first_name}](tg://user?id={admin_obj.id})")
+                return
+            
+            if text == 'شماره من':
+                me = await client.get_me()
+                await event.edit(f"شماره حساب شما: +{me.phone}")
+                return
+
+            if text == 'پین' and event.is_reply:
+                reply = await event.get_reply_message()
+                await client.pin_message(event.chat_id, reply.id)
+                await event.delete()
+                return
+
+            if text.startswith('اسپم '):
+                parts = text.split()
+                if len(parts) >= 3 and parts[-1].isdigit():
+                    count = int(parts[-1])
+                    msg_text = " ".join(parts[1:-1])
+                    await event.delete()
+                    for _ in range(count):
+                        await client.send_message(event.chat_id, msg_text)
+                        await asyncio.sleep(0.1)
+                return
+
+            # ========================================================
+            # If it's NOT a command, apply formatting or status to normal text
+            # ========================================================
+            
+            # 1. Apply formatting
+            new_text = event.raw_text
+            should_edit = False
+
+            if user.self_settings.get('format_reverse'):
+                new_text = new_text[::-1]
+                should_edit = True
+            
+            if user.self_settings.get('format_bold'):
+                new_text = f"**{new_text}**"
+                should_edit = True
+                
+            if user.self_settings.get('format_italic'):
+                new_text = f"__{new_text}__"
+                should_edit = True
+
+            if user.self_settings.get('format_gradual'):
+                # Typewriter effect
+                temp_text = ""
+                for char in event.raw_text:
+                    temp_text += char
+                    await event.edit(temp_text)
+                    await asyncio.sleep(0.1)
+                return # Already edited, exit
+
+            # 2. Translate if translation is on
+            if user.self_settings.get('trans_english'):
+                new_text = translate_text(new_text, 'en')
+                should_edit = True
+            elif user.self_settings.get('trans_chinese'):
+                new_text = translate_text(new_text, 'zh-CN')
+                should_edit = True
+            elif user.self_settings.get('trans_russian'):
+                new_text = translate_text(new_text, 'ru')
+                should_edit = True
+
+            if should_edit and new_text != event.raw_text:
+                await event.edit(new_text)
+
+
+        # ---------------- 2. Incoming PV Interceptor (Locks & Auto-Seen) ----------------
+        @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
+        async def handle_incoming_pv(event):
+            user = User.objects(telegram_id=user_id).first()
+            if not user:
+                return
+
+            # Auto-Seen
+            if user.self_settings.get('status_seen'):
+                await client.send_read_acknowledge(event.chat_id)
+
+            # Check PV Locks
+            active_locks = UserMediaLock.objects(user_id=user.id, is_enabled=True).all()
+            locked_types = [lock.media_type for lock in active_locks]
+
+            should_delete = False
+            if 'text' in locked_types and event.text and not event.media:
+                should_delete = True
+            if 'photo' in locked_types and event.photo:
+                should_delete = True
+            if 'video' in locked_types and event.video and not event.gif:
+                should_delete = True
+            if 'gif' in locked_types and event.gif:
+                should_delete = True
+            if 'voice' in locked_types and event.voice:
+                should_delete = True
+            if 'sticker' in locked_types and event.sticker:
+                should_delete = True
+            if 'music' in locked_types and event.audio and not event.voice:
+                should_delete = True
+            if 'file' in locked_types and event.document and not (event.audio or event.video or event.gif or event.sticker):
+                should_delete = True
+
+            if should_delete:
+                await event.delete()
+                return
+
+            # Secretary / Auto Reply
+            if user.self_settings.get('secretary'):
+                sec = UserSecretary.objects(user_id=user.id).first()
+                if sec and sec.is_enabled and sec.auto_reply_text:
+                    await event.reply(sec.auto_reply_text)
+
+        # ---------------- 3. Status Action Maintainer ----------------
+        @client.on(events.NewMessage(outgoing=True))
+        async def handle_status_actions(event):
+            user = User.objects(telegram_id=user_id).first()
+            if not user:
+                return
+            
+            if user.self_settings.get('status_typing'):
+                async with client.action(event.chat_id, 'typing'):
+                    await asyncio.sleep(2)
+            if user.self_settings.get('status_playing'):
+                async with client.action(event.chat_id, 'game'):
+                    await asyncio.sleep(2)
+
 
 # ============ PAYMENT MANAGER ============
 
@@ -1621,6 +1979,33 @@ DASHBOARD_TEMPLATE = '''
 </html>
 '''
 
+
+# ============ ASYNC RUNNER FOR TELETHON ============
+def run_telethon_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    manager = TelethonManager()
+    
+    async def check_users_periodically():
+        while True:
+            try:
+                # Load all active user sessions from DB to run them
+                sessions = UserSession.objects(is_active=True).all()
+                for sess in sessions:
+                    user = User.objects(telegram_id=sess.user_id).first()
+                    # Start client only if self bot features are activated (gems checked etc.)
+                    if user and user.time_enabled and sess.user_id not in manager.clients:
+                        await manager.start_client(sess.user_id, sess.session_string)
+            except Exception as e:
+                print(f"Error checking DB for users: {e}")
+            await asyncio.sleep(10)
+            
+    loop.create_task(check_users_periodically())
+    print("[+] Telethon loop started.")
+    loop.run_forever()
+
+
 # ============ RUN APP ============
 
 if __name__ == '__main__':
@@ -1631,7 +2016,7 @@ if __name__ == '__main__':
 ║                                                                ║
 ║  ✨ Features:                                                  ║
 ║    ✓ Text Formatting (Bold, Italic, Underline, etc)          ║
-║    ✓ Media Locks (Photo, Video, Voice, Sticker, GIF)         ║
+║    ✓ Media Locks (Photo, Video, Voice, Sticker, GIF, etc)    ║
 ║    ✓ Status Actions (Typing, Playing, Recording, etc)        ║
 ║    ✓ Auto Translation (Multi-language support)               ║
 ║    ✓ Auto Reactions (Custom emoji reactions)                 ║
@@ -1649,6 +2034,14 @@ if __name__ == '__main__':
 ║  🗄️ Database: MongoDB Connected                              ║
 ║  🔄 Scheduler: APScheduler Active                            ║
 ║  💎 Payment: Toman-based Gem System                          ║
+║  🌐 Telethon: Running Async Background Event Loop            ║
 ╚════════════════════════════════════════════════════════════════╝
     """)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    
+    # Run Telethon event loop in a background thread so it doesn't block Flask
+    telethon_thread = threading.Thread(target=run_telethon_loop)
+    telethon_thread.daemon = True
+    telethon_thread.start()
+    
+    # Run Flask Application
+    app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)
