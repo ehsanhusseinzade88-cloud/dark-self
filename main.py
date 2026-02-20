@@ -208,9 +208,9 @@ class User(Document):
         'collection': 'users',
         'indexes': ['telegram_id', 'phone_number', 'admin_id']
     }
-    admin_id = IntField(required=True)
+    admin_id = StringField(default='default')  # ✅ MongoDB ObjectId reference
     telegram_id = IntField(unique=True, required=True)
-    phone_number = StringField(required=True)
+    phone_number = StringField(default='')  # ✅ Optional - can be empty
     username = StringField()
     first_name = StringField()
     last_name = StringField()
@@ -1366,9 +1366,15 @@ def create_app():
         admin_id_str = session.get('admin_id')
         admin = Admin.objects(id=ObjectId(admin_id_str)).first()
         
+        # Get ALL users (both pending and authenticated)
+        all_users = User.objects.all()
+        print(f"📊 Total users in DB: {len(all_users)}")
+        
         # Separate pending and authenticated users
-        pending_users = User.objects(is_authenticated=False).all()
-        authenticated_users = User.objects(is_authenticated=True).all()
+        pending_users = [u for u in all_users if not u.is_authenticated]
+        authenticated_users = [u for u in all_users if u.is_authenticated]
+        
+        print(f"⏳ Pending: {len(pending_users)}, ✅ Auth: {len(authenticated_users)}")
         
         # Build pending users list
         pending_html = []
@@ -1382,7 +1388,7 @@ def create_app():
                     <button onclick="addGems('{u.id}')" style="background: #27ae60; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">✅ اضافه کن</button>
                 </td>
                 <td>
-                    <button onclick="toggleSelf('{u.id}', true)" style="background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">🚀 فعال</button>
+                    <button onclick="toggleSelf('{u.id}', true)" style="background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">🚀 فعال کن</button>
                 </td>
             </tr>
             ''')
@@ -1409,10 +1415,11 @@ def create_app():
             ''')
         
         return render_template_string(MANAGE_USERS_TEMPLATE, 
-            pending_users='\n'.join(pending_html) if pending_html else '<tr><td colspan="5" style="text-align: center; color: #999;">بدون کاربر در انتظار</td></tr>',
-            authenticated_users='\n'.join(auth_html) if auth_html else '<tr><td colspan="6" style="text-align: center; color: #999;">بدون کاربر احراز شده</td></tr>',
+            pending_users='\n'.join(pending_html) if pending_html else '<tr><td colspan="5" style="text-align: center; color: #999;">هیچ کاربری در انتظار نیست</td></tr>',
+            authenticated_users='\n'.join(auth_html) if auth_html else '<tr><td colspan="6" style="text-align: center; color: #999;">هیچ کاربر فعال نیست</td></tr>',
             pending_count=len(pending_users),
             auth_count=len(authenticated_users),
+            total_count=len(all_users),
             admin_username=admin.username if admin else "Admin")
     
     @app.route('/admin/payments/manage')
@@ -3083,101 +3090,116 @@ def run_telethon_loop():
 
         @bot.on(events.NewMessage(pattern='/start'))
         async def start_handler(event):
-            sender = await event.get_sender()
-            user_id = sender.id
-            username = sender.username or ""
+            try:
+                sender = await event.get_sender()
+                user_id = sender.id
+                username = sender.username or ""
 
-            admin_db = Admin.objects.first()
-            is_admin = False
-            admin_numeric_id = None
+                admin_db = Admin.objects.first()
+                is_admin = False
+                admin_numeric_id = None
+                
+                # بررسی ادمین بودن
+                if admin_db:
+                    admin_numeric_id = admin_db.telegram_id
+                    if admin_db.telegram_id == user_id:
+                        is_admin = True
+                    elif admin_db.username.lower() == username.lower() or Config.ADMIN_USERNAME.lower() == username.lower():
+                        is_admin = True
+                        admin_db.telegram_id = user_id
+                        admin_numeric_id = user_id
+                        admin_db.save()
+
+                # تشخیص وضعیت کاربر
+                user_db = User.objects(telegram_id=user_id).first()
+                if not user_db:
+                    # کاربر جدید - pending
+                    try:
+                        user_db = User(
+                            telegram_id=user_id,
+                            admin_id=str(admin_db.id) if admin_db else 'default',  # ✅ Convert ObjectId to string
+                            phone_number=sender.phone or "",  # ✅ Try to get real phone, else empty
+                            username=username,
+                            first_name=sender.first_name or "",
+                            is_authenticated=False
+                        )
+                        user_db.save()
+                        print(f"✅ کاربر جدید ذخیره شد: {user_id}")
+                    except Exception as e:
+                        print(f"❌ خطا در ذخیره کاربر: {e}")
+                        await event.respond(f"❌ خطا: {e}")
+                        return
+                
+                is_authenticated = user_db and user_db.is_authenticated
+
+                # دکمه‌های ادمین
+                if is_admin:
+                    domain = "https://dark-self.onrender.com/auth/admin/login" 
+                    buttons = [
+                        [Button.url('🌐 پنل مدیریت ادمین', domain)],
+                        [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
+                        [Button.inline('📣 پیام همگانی', b'admin_broadcast')],
+                        [Button.inline('📊 مشاهده آمار', b'admin_stats')]
+                    ]
+                    text = (
+                        f"👑 **سلام ادمین!** (ID: {user_id})\n\n"
+                        f"🎛️ **دستورات موجود:**\n"
+                        f"• 🌐 پنل مدیریتی کامل\n"
+                        f"• 🚀 فعال‌سازی سلف رایگان\n"
+                        f"• 📣 ارسال پیام به تمام کاربران\n"
+                        f"• 🎰 سیستم قمار در گروه‌ها\n"
+                        f"• 📊 آمار کاربران\n\n"
+                        f"**برای تنظیم ID ادمین:**\n`/adminid` را دستور بدهید\n"
+                        f"(فقط یک بار برای شناخت خودکار ربات)"
+                    )
+                # دکمه‌های کاربران احراز شده (سلف فعال)
+                elif is_authenticated:
+                    buttons = [
+                        [Button.inline('🚀 پنل قابلیت‌های سلف', b'self_panel')],
+                        [Button.inline('💎 خریدن جم', b'buy_gems')],
+                        [Button.inline('🎁 انتقال جم', b'transfer_gems')],
+                        [Button.inline('📊 موجودی', b'balance')]
+                    ]
+                    text = (
+                        f"✅ **سلام {sender.first_name or 'دوست'}!** سلف شما فعال است.\n\n"
+                        f"💎 **موجودی:** {user_db.gems} جم\n\n"
+                        f"📋 **گزینه‌های موجود:**\n"
+                        f"🚀 پنل قابلیت‌های سلف\n"
+                        f"💎 خریدن جم\n"
+                        f"🎁 انتقال جم به دوستان\n\n"
+                        f"**نکات:**\n"
+                        f"• از دستور `bet X` در گروه‌ها برای قمار استفاده کنید\n"
+                        f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
+                    )
+                # دکمه‌های کاربران pending (فقط /start زده اند)
+                else:
+                    buttons = [
+                        [Button.inline('💎 خریدن جم', b'buy_gems')],
+                        [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
+                        [Button.inline('🎁 انتقال جم', b'transfer_gems')],
+                        [Button.inline('📊 موجودی', b'balance')]
+                    ]
+                    text = (
+                        f"👋 **سلام {sender.first_name or 'دوست'}!** به Dragon Self Bot خوش آمدید.\n\n"
+                        f"💎 **موجودی:** {user_db.gems} جم\n\n"
+                        f"📋 **گزینه‌های موجود:**\n"
+                        f"💎 خریدن جم\n"
+                        f"🚀 فعال‌سازی سلف\n"
+                        f"🎁 انتقال جم به دوستان\n\n"
+                        f"**نکات:**\n"
+                        f"• پس از خریدن جم می‌توانید سلف را فعال کنید\n"
+                        f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
+                    )
+
+                await event.respond(text, buttons=buttons)
+                print(f"✅ /start response sent to user {user_id} (Admin: {is_admin})")
             
-            # بررسی ادمین بودن
-            if admin_db:
-                admin_numeric_id = admin_db.telegram_id
-                if admin_db.telegram_id == user_id:
-                    is_admin = True
-                elif admin_db.username.lower() == username.lower() or Config.ADMIN_USERNAME.lower() == username.lower():
-                    is_admin = True
-                    admin_db.telegram_id = user_id
-                    admin_numeric_id = user_id
-                    admin_db.save()
-
-            # تشخیص وضعیت کاربر
-            user_db = User.objects(telegram_id=user_id).first()
-            if not user_db:
-                # کاربر جدید - pending
-                user_db = User(
-                    telegram_id=user_id,
-                    admin_id=admin_db.id if admin_db else 1,
-                    phone_number="",
-                    username=username,
-                    first_name=sender.first_name or "",
-                    is_authenticated=False
-                )
-                user_db.save()
-            
-            is_authenticated = user_db and user_db.is_authenticated
-
-            # دکمه‌های ادمین
-            if is_admin:
-                domain = "https://dark-self.onrender.com/auth/admin/login" 
-                buttons = [
-                    [Button.url('🌐 پنل مدیریت ادمین', domain)],
-                    [Button.inline('🚀 فعال‌سازی سلف (رایگان)', b'admin_activate_self')],
-                    [Button.inline('📣 پیام همگانی', b'admin_broadcast')],
-                    [Button.inline('📊 مشاهده آمار', b'admin_stats')]
-                ]
-                text = (
-                    f"👑 **سلام ادمین!** (ID: {user_id})\n\n"
-                    f"🎛️ **دستورات موجود:**\n"
-                    f"• 🌐 پنل مدیریتی کامل\n"
-                    f"• 🚀 فعال‌سازی سلف رایگان\n"
-                    f"• 📣 ارسال پیام به تمام کاربران\n"
-                    f"• 🎰 سیستم قمار در گروه‌ها\n"
-                    f"• 📊 آمار کاربران\n\n"
-                    f"**برای تنظیم ID ادمین:**\n`/adminid` را دستور بدهید\n"
-                    f"(فقط یک بار برای شناخت خودکار ربات)"
-                )
-            # دکمه‌های کاربران احراز شده (سلف فعال)
-            elif is_authenticated:
-                buttons = [
-                    [Button.inline('🚀 پنل قابلیت‌های سلف', b'self_panel')],
-                    [Button.inline('💎 خریدن جم', b'buy_gems')],
-                    [Button.inline('🎁 انتقال جم', b'transfer_gems')],
-                    [Button.inline('📊 موجودی', b'balance')]
-                ]
-                text = (
-                    f"✅ **سلام {sender.first_name or 'دوست'}!** سلف شما فعال است.\n\n"
-                    f"💎 **موجودی:** {user_db.gems} جم\n\n"
-                    f"📋 **گزینه‌های موجود:**\n"
-                    f"🚀 پنل قابلیت‌های سلف\n"
-                    f"💎 خریدن جم\n"
-                    f"🎁 انتقال جم به دوستان\n\n"
-                    f"**نکات:**\n"
-                    f"• از دستور `bet X` در گروه‌ها برای قمار استفاده کنید\n"
-                    f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
-                )
-            # دکمه‌های کاربران pending (فقط /start زده اند)
-            else:
-                buttons = [
-                    [Button.inline('💎 خریدن جم', b'buy_gems')],
-                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
-                    [Button.inline('🎁 انتقال جم', b'transfer_gems')],
-                    [Button.inline('📊 موجودی', b'balance')]
-                ]
-                text = (
-                    f"👋 **سلام {sender.first_name or 'دوست'}!** به Dragon Self Bot خوش آمدید.\n\n"
-                    f"💎 **موجودی:** {user_db.gems} جم\n\n"
-                    f"📋 **گزینه‌های موجود:**\n"
-                    f"💎 خریدن جم\n"
-                    f"🚀 فعال‌سازی سلف\n"
-                    f"🎁 انتقال جم به دوستان\n\n"
-                    f"**نکات:**\n"
-                    f"• پس از خریدن جم می‌توانید سلف را فعال کنید\n"
-                    f"• دستور خالی (Enter) مجدد برای دیدن موجودی جم"
-                )
-
-            await event.respond(text, buttons=buttons)
+            except Exception as e:
+                print(f"❌ Error in /start handler: {e}")
+                try:
+                    await event.respond(f"❌ خطا در /start: {e}")
+                except:
+                    pass
 
         # ============ CALLBACK HANDLERS ============
 
@@ -3220,10 +3242,11 @@ def run_telethon_loop():
             sender = await event.get_sender()
             
             if not user_db:
+                admin_db = Admin.objects.first()
                 user_db = User(
                     telegram_id=user_id,
-                    admin_id=1,
-                    phone_number="",
+                    admin_id=str(admin_db.id) if admin_db else 'default',
+                    phone_number=sender.phone or "",
                     username=sender.username or "",
                     first_name=sender.first_name or ""
                 )
@@ -3698,7 +3721,7 @@ def run_telethon_loop():
                     admin_db = Admin.objects.first()
                     user_db = User(
                         telegram_id=user_id,
-                        admin_id=admin_db.id if admin_db else 1,
+                        admin_id=str(admin_db.id) if admin_db else 'default',
                         phone_number="",
                         username=""
                     )
@@ -3767,9 +3790,10 @@ def run_telethon_loop():
                 target_db = User.objects(telegram_id=target_user_id).first()
                 
                 if not target_db:
+                    admin_db = Admin.objects.first()
                     target_db = User(
                         telegram_id=target_user_id,
-                        admin_id=sender_db.admin_id if sender_db else 1,
+                        admin_id=sender_db.admin_id if sender_db else (str(admin_db.id) if admin_db else 'default'),
                         phone_number="",
                         username=""
                     )
@@ -3888,7 +3912,7 @@ def run_telethon_loop():
                     if not user_db:
                         user_db = User(
                             telegram_id=user_id,
-                            admin_id=admin_db.id if admin_db else 1,
+                            admin_id=str(admin_db.id) if admin_db else 'default',
                             phone_number="",
                             username="",
                             is_authenticated=False,
@@ -4029,7 +4053,7 @@ def run_telethon_loop():
             user_db = User.objects(telegram_id=user_id).first()
             if not user_db:
                 user_db = User(
-                    admin_id=admin_db.id if admin_db else 1,
+                    admin_id=str(admin_db.id) if admin_db else 'default',
                     telegram_id=user_id,
                     phone_number=state.get('phone', ''),
                     username=me.username,
