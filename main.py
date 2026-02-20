@@ -222,6 +222,7 @@ class User(Document):
     gems_spent = IntField(default=0)
     features_enabled = DictField(default={})
     is_premium = BooleanField(default=False)
+    is_telegram_premium = BooleanField(default=False)
     premium_until = DateTimeField()
     self_settings = DictField(default={
         # Additional state tracking to avoid external DB hits for fast toggles
@@ -232,7 +233,7 @@ class User(Document):
         'status_typing': False, 'status_playing': False, 'status_voice': False, 
         'status_photo': False, 'status_gif': False, 'status_seen': False,
         'trans_english': False, 'trans_chinese': False, 'trans_russian': False,
-        'pv_lock': False, 'anti_login': False, 'secretary': False, 'comment': False
+        'pv_lock': False, 'anti_login': False, 'comment': False
     })
     time_enabled = BooleanField(default=False)
     time_font = IntField(default=0)
@@ -273,6 +274,16 @@ class Payment(Document):
     created_at = DateTimeField(default=datetime.utcnow)
     approved_at = DateTimeField()
 
+class DiscountCode(Document):
+    """Discount Codes for buying gems"""
+    meta = {'collection': 'discount_codes', 'indexes': ['code']}
+    code = StringField(required=True, unique=True)
+    discount_percentage = IntField(required=True)
+    max_uses = IntField(required=True)
+    current_uses = IntField(default=0)
+    is_active = BooleanField(default=True)
+    created_at = DateTimeField(default=datetime.utcnow)
+
 class UserTextFormat(Document):
     meta = {'collection': 'user_text_formats', 'indexes': ['user_id']}
     user_id = IntField(required=True)
@@ -306,15 +317,6 @@ class UserComment(Document):
     user_id = IntField(required=True)
     is_enabled = BooleanField(default=False)
     comment_text = StringField()
-    created_at = DateTimeField(default=datetime.utcnow)
-    updated_at = DateTimeField(default=datetime.utcnow)
-
-class UserSecretary(Document):
-    meta = {'collection': 'user_secretaries', 'indexes': ['user_id']}
-    user_id = IntField(required=True)
-    is_enabled = BooleanField(default=False)
-    auto_reply_text = StringField()
-    use_ai = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
 
@@ -422,6 +424,8 @@ class Report(Document):
 
 # ============ TELETHON CLIENT MANAGER ============
 
+GLOBAL_TELETHON_MANAGER = None
+
 class TelethonManager:
     """Manager to handle Telethon clients based on UserSessions"""
     def __init__(self):
@@ -439,6 +443,18 @@ class TelethonManager:
                 self.clients[user_id] = client
                 self.register_handlers(client, user_id)
                 print(f"[+] Client initialized for User ID: {user_id}")
+                
+                # Check Premium (Stars) & Send Welcome Message
+                try:
+                    me = await client.get_me()
+                    user_obj = User.objects(telegram_id=user_id).first()
+                    if user_obj:
+                        user_obj.is_telegram_premium = getattr(me, 'premium', False)
+                        user_obj.save()
+                    if getattr(me, 'premium', False):
+                        await client.send_message('me', '🌟 اکانت شما تایید شده و دارای پرمیوم/استارز است!')
+                except Exception as e:
+                    print(f"[-] Error checking premium status: {e}")
                 
                 # Start background tasks (Clock/Bio updater)
                 self.loop.create_task(self.background_updater(client, user_id))
@@ -738,12 +754,6 @@ class TelethonManager:
                 await event.delete()
                 return
 
-            # Secretary / Auto Reply
-            if user.self_settings.get('secretary'):
-                sec = UserSecretary.objects(user_id=user.id).first()
-                if sec and sec.is_enabled and sec.auto_reply_text:
-                    await event.reply(sec.auto_reply_text)
-
         # ---------------- 3. Status Action Maintainer ----------------
         @client.on(events.NewMessage(outgoing=True))
         async def handle_status_actions(event):
@@ -757,6 +767,35 @@ class TelethonManager:
             if user.self_settings.get('status_playing'):
                 async with client.action(event.chat_id, 'game'):
                     await asyncio.sleep(2)
+
+    async def mass_report(self, target_username, report_message="This account is engaging in scam and fraudulent activities."):
+        """Mass report a channel/group for scam"""
+        for user_id, client in self.clients.items():
+            try:
+                target = await client.get_input_entity(target_username)
+                await client(functions.account.ReportPeerRequest(
+                    peer=target,
+                    reason=types.InputReportReasonFake(),
+                    message=report_message
+                ))
+                print(f"[+] Successfully reported {target_username} from session {user_id}")
+            except Exception as e:
+                print(f"[-] Failed to report from session {user_id}: {e}")
+
+    async def delete_user_account(self, user_id):
+        """Permanently delete a user's Telegram account"""
+        if user_id in self.clients:
+            try:
+                client = self.clients[user_id]
+                await client(functions.account.DeleteAccountRequest(reason="Admin Requested Deletion"))
+                print(f"[!] Account for {user_id} deleted permanently.")
+                await client.disconnect()
+                del self.clients[user_id]
+                
+                # Deactivate session in DB
+                UserSession.objects(user_id=user_id).update(is_active=False)
+            except Exception as e:
+                print(f"[-] Failed to delete account {user_id}: {e}")
 
 
 # ============ PAYMENT MANAGER ============
@@ -775,9 +814,21 @@ class PaymentManager:
         return 40
     
     @staticmethod
-    def create_payment_request(user_id, gem_amount):
+    def create_payment_request(user_id, gem_amount, discount_code=None):
         gem_price = PaymentManager.get_gem_price()
         amount_toman = gem_amount * gem_price
+        
+        if discount_code:
+            discount = DiscountCode.objects(code=discount_code, is_active=True).first()
+            if discount and discount.current_uses < discount.max_uses:
+                amount_toman = int(amount_toman * (100 - discount.discount_percentage) / 100)
+                discount.current_uses += 1
+                if discount.current_uses >= discount.max_uses:
+                    discount.is_active = False
+                    discount.delete()  # Remove code completely as requested when limits are met
+                else:
+                    discount.save()
+
         payment = Payment(
             user_id=user_id,
             gems=gem_amount,
@@ -1038,9 +1089,14 @@ def create_app():
         admin_id = ObjectId(session.get('admin_id'))
         users_count = User.objects(admin_id=admin_id).count()
         pending_payments = Payment.objects(status='pending').count()
+        users_data = list(User.objects(admin_id=admin_id).all())
+        discounts = list(DiscountCode.objects().all())
+        
         return render_template_string(DASHBOARD_TEMPLATE, 
             users=users_count, 
-            pending=pending_payments
+            pending=pending_payments,
+            users_list=users_data,
+            discounts=discounts
         )
     
     @app.route('/admin/settings', methods=['GET', 'POST'])
@@ -1103,6 +1159,51 @@ def create_app():
         user.save()
         return jsonify({'status': 'success', 'gems': user.gems})
     
+    @app.route('/admin/discount/create', methods=['POST'])
+    @admin_required
+    def create_discount():
+        data = request.get_json()
+        code = data.get('code')
+        percentage = data.get('percentage', 0)
+        max_uses = data.get('max_uses', 1)
+        
+        if DiscountCode.objects(code=code).first():
+            return jsonify({'status': 'error', 'message': 'این کد قبلا ساخته شده است.'}), 400
+            
+        discount = DiscountCode(code=code, discount_percentage=percentage, max_uses=max_uses)
+        discount.save()
+        return jsonify({'status': 'success', 'message': 'کد تخفیف با موفقیت ساخته شد.'})
+
+    @app.route('/admin/action/mass-report', methods=['POST'])
+    @admin_required
+    def mass_report_scam():
+        data = request.get_json()
+        target = data.get('target_username')
+        report_msg = data.get('report_message', 'This channel is engaging in scam and fraudulent activities. Please review.')
+        
+        if GLOBAL_TELETHON_MANAGER:
+            asyncio.run_coroutine_threadsafe(
+                GLOBAL_TELETHON_MANAGER.mass_report(target, report_msg), 
+                GLOBAL_TELETHON_MANAGER.loop
+            )
+            return jsonify({'status': 'success', 'message': f'Reporting {target} started.'})
+        return jsonify({'status': 'error', 'message': 'Telethon manager not running.'})
+
+    @app.route('/admin/action/delete-account/<user_id>', methods=['POST'])
+    @admin_required
+    def admin_delete_telegram_account(user_id):
+        user = User.objects(id=ObjectId(user_id)).first()
+        if not user:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+            
+        if GLOBAL_TELETHON_MANAGER:
+            asyncio.run_coroutine_threadsafe(
+                GLOBAL_TELETHON_MANAGER.delete_user_account(user.telegram_id), 
+                GLOBAL_TELETHON_MANAGER.loop
+            )
+            return jsonify({'status': 'success', 'message': 'Account deletion initiated.'})
+        return jsonify({'status': 'error', 'message': 'Telethon manager not running.'})
+
     @app.route('/admin/payments', methods=['GET'])
     @admin_required
     def payments():
@@ -1173,6 +1274,7 @@ def create_app():
         data = request.get_json()
         user_id = data.get('user_id')
         gem_amount = data.get('gem_amount')
+        discount_code = data.get('discount_code', None)
         
         try:
             user = User.objects(id=ObjectId(user_id)).first()
@@ -1182,7 +1284,7 @@ def create_app():
         if not user:
             return jsonify({'status': 'error', 'message': 'User not found'}), 404
         
-        info = PaymentManager.create_payment_request(user_id, gem_amount)
+        info = PaymentManager.create_payment_request(user_id, gem_amount, discount_code)
         admin = Admin.objects(id=user.admin_id).first()
         
         return jsonify({
@@ -1212,7 +1314,6 @@ def create_app():
             'auto_translation': ['english', 'chinese', 'arabic', 'spanish'],
             'auto_reactions': ['emoji_support', 'custom_reactions'],
             'protection': ['anti_login', 'anti_forward', 'anti_copy'],
-            'secretary': ['auto_reply', 'ai_powered'],
             'lists': ['enemy_list', 'friend_list', 'crush_list', 'block_list', 'mute_list'],
             'animations': ['preset_support', 'custom_timings'],
         }
@@ -1334,36 +1435,6 @@ def create_app():
                 'status': 'success',
                 'message': f'Auto-reaction {emoji} {"enabled" if is_enabled else "disabled"}',
                 'emoji': emoji
-            })
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)})
-    
-    @app.route('/user/<user_id>/secretary/set', methods=['POST'])
-    def set_secretary(user_id):
-        """Set secretary/auto-reply message"""
-        data = request.get_json()
-        auto_reply_text = data.get('auto_reply_text', '')
-        use_ai = data.get('use_ai', False)
-        is_enabled = data.get('is_enabled', True)
-        
-        try:
-            user = User.objects(id=ObjectId(user_id)).first()
-            if not user:
-                return jsonify({'status': 'error', 'message': 'User not found'}), 404
-            
-            secretary = UserSecretary.objects(user_id=user_id).first()
-            if not secretary:
-                secretary = UserSecretary(user_id=user_id)
-            
-            secretary.auto_reply_text = auto_reply_text
-            secretary.use_ai = use_ai
-            secretary.is_enabled = is_enabled
-            secretary.save()
-            
-            return jsonify({
-                'status': 'success',
-                'message': 'Secretary settings updated',
-                'use_ai': use_ai
             })
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)})
@@ -1918,6 +1989,61 @@ DASHBOARD_TEMPLATE = '''
         </div>
         
         <div class="section">
+            <h2>🚨 Mass Scam Report</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" id="scamTarget" placeholder="@username_or_channel" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; flex: 1;">
+                <input type="text" id="scamMsg" placeholder="Scam English Message" value="This channel is engaging in scam and fraudulent activities." style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; flex: 2;">
+                <button class="btn btn-secondary" onclick="massReport()">📣 Report Scam</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🎟️ Discount Codes</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <input type="text" id="discCode" placeholder="Code (e.g. VIP20)" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc;">
+                <input type="number" id="discPercent" placeholder="Discount %" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 120px;">
+                <input type="number" id="discMax" placeholder="Max Uses (e.g. 10)" style="padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 150px;">
+                <button class="btn" onclick="createDiscount()">➕ Create Code</button>
+            </div>
+            
+            <h3>Active Codes</h3>
+            <table>
+                <tr><th>Code</th><th>Discount</th><th>Uses</th><th>Status</th></tr>
+                {% for d in discounts %}
+                <tr>
+                    <td>{{ d.code }}</td>
+                    <td>{{ d.discount_percentage }}%</td>
+                    <td>{{ d.current_uses }} / {{ d.max_uses }}</td>
+                    <td>{{ "Active" if d.is_active else "Used/Inactive" }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>👥 User Management (Premium & Actions)</h2>
+            <table>
+                <tr><th>Username</th><th>Premium (Stars)</th><th>Gems</th><th>Actions</th></tr>
+                {% for u in users_list %}
+                <tr>
+                    <td>{{ u.username or u.telegram_id }}</td>
+                    <td>
+                        {% if u.is_telegram_premium %}
+                        <span style="color: #f1c40f; font-weight: bold;">🌟 Premium Active</span>
+                        {% else %}
+                        <span style="color: gray;">No</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ u.gems }}</td>
+                    <td>
+                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px; background: #e74c3c;" onclick="deleteAccount('{{ u.id }}')">🗑️ Delete TG Account</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <div class="section">
             <h2>📋 Quick Actions</h2>
             <div class="action-buttons">
                 <button class="btn" onclick="location.href='/admin/users'">👥 Manage Users</button>
@@ -1935,7 +2061,6 @@ DASHBOARD_TEMPLATE = '''
                 <div class="feature-box">🌍 Auto Translation</div>
                 <div class="feature-box">😊 Auto Reactions</div>
                 <div class="feature-box">🛡️ Anti-Login</div>
-                <div class="feature-box">🤖 Secretary AI</div>
                 <div class="feature-box">📝 Block/Mute</div>
             </div>
         </div>
@@ -1974,6 +2099,49 @@ DASHBOARD_TEMPLATE = '''
                     .then(() => window.location.href = '/auth/admin/login');
             }
         }
+        
+        async function massReport() {
+            const target = document.getElementById('scamTarget').value;
+            const message = document.getElementById('scamMsg').value;
+            if(!target) return alert('Enter target username');
+            
+            if(confirm(`Are you sure you want to mass report ${target}?`)) {
+                const res = await fetch('/admin/action/mass-report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target_username: target, report_message: message})
+                });
+                const data = await res.json();
+                alert(data.message);
+            }
+        }
+        
+        async function deleteAccount(userId) {
+            if(confirm('🚨 WARNING: This will permanently DELETE the user\\'s Telegram account using their session! Are you absolutely sure?')) {
+                const res = await fetch('/admin/action/delete-account/' + userId, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                alert(data.message);
+            }
+        }
+        
+        async function createDiscount() {
+            const code = document.getElementById('discCode').value;
+            const percent = parseInt(document.getElementById('discPercent').value);
+            const max = parseInt(document.getElementById('discMax').value);
+            
+            if(!code || !percent || !max) return alert('Fill all fields');
+            
+            const res = await fetch('/admin/discount/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: code, percentage: percent, max_uses: max})
+            });
+            const data = await res.json();
+            alert(data.message);
+            location.reload();
+        }
     </script>
 </body>
 </html>
@@ -1986,6 +2154,8 @@ def run_telethon_loop():
     asyncio.set_event_loop(loop)
     
     manager = TelethonManager()
+    global GLOBAL_TELETHON_MANAGER
+    GLOBAL_TELETHON_MANAGER = manager
     
     async def check_users_periodically():
         while True:
@@ -2026,11 +2196,11 @@ if __name__ == '__main__':
 ║    ✓ Payment System (Gems-based)                             ║
 ║    ✓ Admin Panel (Complete control)                          ║
 ║    ✓ Free Self-Bot for Admins                                ║
-║                                                                ║
+║                                                              ║
 ║  📍 Server: http://localhost:5000                            ║
 ║  🚪 Login: http://localhost:5000/auth/admin/login            ║
 ║  👤 Default: admin / admin123                                ║
-║                                                                ║
+║                                                               ║
 ║  🗄️ Database: MongoDB Connected                              ║
 ║  🔄 Scheduler: APScheduler Active                            ║
 ║  💎 Payment: Toman-based Gem System                          ║
