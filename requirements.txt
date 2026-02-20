@@ -1,9 +1,7 @@
 telethon
 flask
 flask-cors
-mongodb-driver
 pymongo
-mongoengine
 python-dotenv
 pytz
 jdatetime
@@ -13,5 +11,3 @@ werkzeug
 google-cloud-translate
 python-telegram-bot
 pycryptodome
-
-
