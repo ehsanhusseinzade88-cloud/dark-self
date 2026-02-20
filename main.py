@@ -1377,12 +1377,23 @@ def create_app():
         for p in payments:
             user = User.objects(id=p.user_id).first()
             username = user.username if user else f"ID: {p.user_id}"
+            receipt_button = ""
+            if p.receipt_image:
+                # If receipt_image is base64 encoded
+                receipt_src = f"data:image/png;base64,{p.receipt_image}" if not p.receipt_image.startswith('data:') else p.receipt_image
+                receipt_button = f"<button onclick=\"showReceipt('{receipt_src}')\" style='background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;'>📷 رسید</button>"
+            else:
+                receipt_button = "<span style='color: #999;'>بدون رسید</span>"
+            
             payments_html.append(f'''
             <tr>
                 <td>{username}</td>
                 <td>{p.gems}</td>
                 <td>{p.amount_toman:,}</td>
-                <td>{p.created_at.strftime("%Y-%m-%d %H:%M")}</td>
+                <td>{p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else "نامشخص"}</td>
+                <td>
+                    {receipt_button}
+                </td>
                 <td>
                     <input type="text" id="note_{p.id}" placeholder="نوت تایید/رد" style="width: 150px; padding: 5px;">
                 </td>
@@ -2066,9 +2077,15 @@ MANAGE_PAYMENTS_TEMPLATE = '''
         button { padding: 5px 10px; margin: 0 3px; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; color: white; }
         .success { background: #27ae60; }
         .danger { background: #e74c3c; }
+        .info { background: #3498db; }
         .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
         .msg-success { background: #d4edda; color: #155724; }
         .msg-error { background: #f8d7da; color: #721c24; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: white; margin: 5% auto; padding: 20px; border-radius: 10px; width: 90%; max-width: 600px; }
+        .modal-image { max-width: 100%; height: auto; border-radius: 10px; margin-bottom: 20px; }
+        .close { color: #aaa; float: left; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover { color: black; }
     </style>
 </head>
 <body>
@@ -2088,6 +2105,7 @@ MANAGE_PAYMENTS_TEMPLATE = '''
                         <th>تعداد جم</th>
                         <th>مبلغ (تومان)</th>
                         <th>تاریخ</th>
+                        <th>رسید</th>
                         <th>نوت</th>
                         <th>عملیات</th>
                     </tr>
@@ -2099,6 +2117,15 @@ MANAGE_PAYMENTS_TEMPLATE = '''
         </div>
     </div>
 
+    <!-- Modal for Receipt Image -->
+    <div id="receiptModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeReceiptModal()">&times;</span>
+            <h2>📷 رسید پرداخت</h2>
+            <img id="receiptImage" class="modal-image" src="" alt="Receipt">
+        </div>
+    </div>
+
     <script>
         function showMessage(msg, type) {
             const msgEl = document.getElementById('message');
@@ -2106,6 +2133,24 @@ MANAGE_PAYMENTS_TEMPLATE = '''
             msgEl.className = 'message ' + (type === 'success' ? 'msg-success' : 'msg-error');
             msgEl.style.display = 'block';
             setTimeout(() => msgEl.style.display = 'none', 4000);
+        }
+
+        function showReceipt(imageSrc) {
+            const modal = document.getElementById('receiptModal');
+            const img = document.getElementById('receiptImage');
+            img.src = imageSrc;
+            modal.style.display = 'block';
+        }
+
+        function closeReceiptModal() {
+            document.getElementById('receiptModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('receiptModal');
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
         }
 
         async function approvePayment(paymentId) {
@@ -2918,9 +2963,10 @@ def run_telethon_loop():
             else:
                 buttons = [
                     [Button.inline('💎 خریدن جم', b'buy_gems')],
-                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')]
+                    [Button.inline('🚀 فعال‌سازی سلف', b'activate_self')],
+                    [Button.inline('🎁 انتقال جم', b'transfer_gems')]
                 ]
-                text = "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n📋 **دو گزینه برای شما:**\n💎 خریدن جم\n🚀 فعال‌سازی سلف"
+                text = "👋 **سلام! به Dragon Self Bot خوش آمدید.**\n\n📋 **گزینه‌های موجود:**\n💎 خریدن جم\n🚀 فعال‌سازی سلف\n🎁 انتقال جم به دوستان"
 
             await event.respond(text, buttons=buttons)
 
@@ -3007,6 +3053,27 @@ def run_telethon_loop():
             admin_db = Admin.objects.first()
             min_gems = admin_db.settings.minimum_gems_activate if (admin_db and admin_db.settings) else 80
             
+            # بررسی عضویت اجباری در کانال‌ها
+            mandatory_channels = SubscriptionChannel.objects(is_mandatory=True).all()
+            if mandatory_channels:
+                not_subscribed = []
+                for channel in mandatory_channels:
+                    try:
+                        # بررسی عضویت کاربر در کانال
+                        user_entity = await bot.get_entity(channel.channel_id)
+                        # اگر بتوانیم اطلاعات اعضا را بگیریم، کاربر عضو است
+                        participants = await bot(functions.channels.GetParticipantRequest(user_entity, user_id))
+                    except:
+                        not_subscribed.append(f"@{getattr(user_entity, 'username', str(channel.channel_id))}")
+                
+                if not_subscribed:
+                    channels_text = "\n".join([f"• {ch}" for ch in not_subscribed])
+                    await event.answer(
+                        f"❌ شما باید عضو کانال‌های زیر باشید:\n\n{channels_text}\n\nپس از عضویت دوباره تلاش کنید.",
+                        alert=True
+                    )
+                    return
+            
             if not user_db or user_db.gems < min_gems:
                 remaining = min_gems - (user_db.gems if user_db else 0)
                 await event.answer(
@@ -3047,6 +3114,27 @@ def run_telethon_loop():
                 "مثال: `+989123456789`"
             )
 
+        @bot.on(events.CallbackQuery(data=b'transfer_gems'))
+        async def transfer_gems_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not user_db or user_db.gems <= 0:
+                await event.answer(
+                    "❌ شما جم ندارید برای انتقال!",
+                    alert=True
+                )
+                return
+            
+            await event.edit(
+                "💎 **انتقال جم به دیگری**\n\n"
+                f"جم فعلی شما: {user_db.gems}\n\n"
+                "📝 لطفا **تعداد جem برای انتقال** را وارد کنید:\n\n"
+                "⚠️ سپس پیام کاربری که می‌خواهید جم به او دهید را **ریپلای** کنید.",
+                buttons=[Button.inline('❌ بازگشت', b'back_start')]
+            )
+            LOGIN_STATES[user_id] = {'step': 'transfer_gems_amount'}
+
         @bot.on(events.CallbackQuery(data=b'back_start'))
         async def back_start_callback(event):
             sender = await event.get_sender()
@@ -3069,6 +3157,7 @@ def run_telethon_loop():
             else:
                 buttons.append([Button.inline('💎 خریدن جم', b'buy_gems')])
                 buttons.append([Button.inline('🚀 فعال‌سازی سلف', b'activate_self')])
+                buttons.append([Button.inline('🎁 انتقال جم', b'transfer_gems')])
                 text = "👋 **سلام! به Dragon Self Bot خوش آمدید.**"
 
             await event.edit(text, buttons=buttons)
@@ -3082,6 +3171,87 @@ def run_telethon_loop():
             user_id = event.sender_id
             state = LOGIN_STATES.get(user_id)
             if not state: return
+
+            # Handle Gem Transfer Amount
+            if state['step'] == 'transfer_gems_amount':
+                try:
+                    transfer_amount = int(event.text.strip())
+                    sender_db = User.objects(telegram_id=user_id).first()
+                    
+                    if not sender_db or sender_db.gems < transfer_amount:
+                        await event.respond("❌ جم کافی ندارید برای انتقال!")
+                        del LOGIN_STATES[user_id]
+                        return
+                    
+                    if transfer_amount <= 0:
+                        await event.respond("❌ تعداد جم باید بزرگتر از صفر باشد.")
+                        return
+                    
+                    state['step'] = 'transfer_gems_target'
+                    state['transfer_amount'] = transfer_amount
+                    
+                    await event.respond(
+                        f"💎 **انتقال {transfer_amount} جم**\n\n"
+                        f"حالا پیام کاربری که می‌خواهید جم به او دهید را **ریپلای** کنید.",
+                        buttons=[Button.inline('❌ لغو', b'back_start')]
+                    )
+                except ValueError:
+                    await event.respond("❌ لطفا یک عدد صحیح وارد کنید.")
+                return
+            
+            # Handle Target User Reply for Transfer
+            if state['step'] == 'transfer_gems_target':
+                if not event.is_reply:
+                    await event.respond("❌ لطفا پیام کاربری را که می‌خواهید جم به او دهید **ریپلای** کنید.")
+                    return
+                
+                reply_msg = await event.get_reply_message()
+                target_user_id = reply_msg.sender_id
+                
+                sender_db = User.objects(telegram_id=user_id).first()
+                target_db = User.objects(telegram_id=target_user_id).first()
+                
+                if not target_db:
+                    target_db = User(
+                        telegram_id=target_user_id,
+                        admin_id=sender_db.admin_id if sender_db else 1,
+                        phone_number="",
+                        username=""
+                    )
+                    target_db.save()
+                
+                transfer_amount = state.get('transfer_amount', 0)
+                
+                # Transfer gems
+                sender_db.gems -= transfer_amount
+                target_db.gems += transfer_amount
+                
+                sender_db.save()
+                target_db.save()
+                
+                await event.respond(
+                    f"✅ **انتقال جم موفق!**\n\n"
+                    f"📊 **مشخصات:**\n"
+                    f"• جم انتقال‌یافته: {transfer_amount}\n"
+                    f"• جم باقی‌مانده شما: {sender_db.gems}\n"
+                    f"• جم دریافت‌کننده: {target_db.gems}"
+                )
+                
+                # Notify target user
+                try:
+                    await bot.send_message(
+                        target_user_id,
+                        f"🎁 **هدیه جم دریافت کردید!**\n\n"
+                        f"👤 فرستنده: `{sender_db.first_name}`\n"
+                        f"💎 تعداد جم: {transfer_amount}\n"
+                        f"📊 جم فعلی شما: {target_db.gems}\n\n"
+                        f"دستور `/start` برای شروع!"
+                    )
+                except:
+                    pass
+                
+                del LOGIN_STATES[user_id]
+                return
 
             # Handle Broadcast Message
             if state['step'] == 'broadcast_message':
