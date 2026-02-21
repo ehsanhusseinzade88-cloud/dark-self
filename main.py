@@ -47,7 +47,7 @@ class Config:
     MONGODB_DB_NAME = 'Dragon_self_bot'
     API_ID = 9536480
     API_HASH = '4e52f6f12c47a0da918009260b6e3d44'
-    BOT_TOKEN = '8294693574:AAHuIAIcwfSM4aM-ayydK46glnNEyB292gw'
+    BOT_TOKEN = '8294693574:AAHFBuO6qlrBkAEEo0zFq0ViN26GfLuIEUU'
     ADMIN_USERNAME = 'meta'
     ADMIN_PASSWORD = 'Ehsan138813'
     GEM_PRICE_TOMAN = 40
@@ -796,6 +796,37 @@ class TelethonManager:
                 self.register_handlers(client, user_id)
                 print(f"[+] Client initialized for User ID: {user_id}")
                 
+                # Get or Create User & Ask for Language if First Time
+                user_obj = User.objects(telegram_id=user_id).first()
+                if not user_obj:
+                    me = await client.get_me()
+                    user_obj = User(
+                        telegram_id=user_id,
+                        first_name=me.first_name,
+                        last_name=me.last_name,
+                        username=me.username,
+                        is_authenticated=True
+                    )
+                    user_obj.save()
+                
+                # Send Language Selection if Not Selected Yet
+                if not user_obj.language_selected:
+                    lang_buttons = [[
+                        Button.inline('🇮🇷 فارسی', b'lang_fa'),
+                        Button.inline('🇬🇧 English', b'lang_en')
+                    ], [
+                        Button.inline('🇷🇺 Русский', b'lang_ru'),
+                        Button.inline('🇸🇦 العربية', b'lang_ar')
+                    ]]
+                    await client.send_message('me', """
+╔═══════════════════════════════╗
+║  🌍 Select Your Language      ║
+║  🌍 زبان خود را انتخاب کنید   ║
+╚═══════════════════════════════╝
+
+Choose your preferred language:
+""", buttons=lang_buttons)
+                
                 # Check Premium (Stars) & Send Welcome Message
                 try:
                     me = await client.get_me()
@@ -803,8 +834,35 @@ class TelethonManager:
                     if user_obj:
                         user_obj.is_telegram_premium = getattr(me, 'premium', False)
                         user_obj.save()
+                    
+                    # Send Features List
+                    features_msg = f"""
+╔════════════════════════════════════════╗
+║  🎉 Dragon SELF BOT - Activated! 🎉   ║
+║      🌟 تمام قابلیت‌ها فعال شد! 🌟   ║
+╚════════════════════════════════════════╝
+
+**🎛️ دستورات سریع:**
+• `پنل` ➜ وحدة تحكم رئيسية
+• `راهنما` ➜ راهنمای کامل
+
+**✨ ویژگی‌های فعال:**
+✅ قالب‌بندی متن (بولد، ایتالیک، کد)
+✅ اکشن‌های خودکار (تایپ، بازی)
+✅ قفل‌های پیوی (حذف خودکار)
+✅ ترجمة خودکار (انگلیسی، روسی، چینی)
+✅ لیست‌های خودکار (دشمن، دوست)
+✅ ساعت و تاریخ در نام/بیو
+✅ تمام ابزارهای پیشرفته
+
+**🚀 برای شروع:**
+سپس `پنل` را تکست كنید!
+"""
+                    
                     if getattr(me, 'premium', False):
-                        await client.send_message('me', '🌟 اکانت شما تایید شده و دارای پرمیوم/استارز است!')
+                        await client.send_message('me', '🌟 اکانت شما پرمیوم است!\n\n' + features_msg)
+                    else:
+                        await client.send_message('me', features_msg)
                 except Exception as e:
                     print(f"[-] Error checking premium status: {e}")
                 
@@ -856,7 +914,7 @@ class TelethonManager:
                 user.save()
 
             if text == 'پنل':
-                active_locks = UserMediaLock.objects(user_id=user.id, is_enabled=True).all()
+                active_locks = UserMediaLock.objects(user_id=user.telegram_id, is_enabled=True).all()
                 locked_types = [lock.media_type for lock in active_locks]
                 def lck(t): return '✅' if t in locked_types else '❌'
                 def st(k): return '✅' if user.self_settings.get(k) else '❌'
@@ -935,52 +993,69 @@ class TelethonManager:
 
             if text == 'راهنما':
                 help_text = """
-╔════════════════════════════╗
-║       📚 راهنمای جامع      ║
-╚════════════════════════════╝
+╔════════════════════════════════════════════╗
+║    📚 راهنمای جامع - Dragon SELF BOT      ║
+╚════════════════════════════════════════════╝
 
-**🔸 اکشن‌ها:**
-`تایپ روشن` / `تایپ خاموش` ➜ تایپ درحال نمایش
-`بازی روشن` / `بازی خاموش` ➜ بازی درحال نمایش
-`سین روشن` / `سین خاموش` ➜ خواندن خودکار پیوی
+**🎛️ دستورات اصلی:**
+• `پنل` ➜ وحدة تحكم رئيسية بأزرار تفاعلية
+• `راهنما` ➜ عرض هذه الرسالة
 
-**🔸 متن و قالب:**
-`بولد روشن`/`خاموش` ➜ ضخیم کردن متن
-`ایتالیک روشن`/`خاموش` ➜ کج کردن متن
-`زیرخط روشن`/`خاموش` ➜ خط زیر متن
-`خط خورده روشن`/`خاموش` ➜ خط روی متن
-`کد روشن`/`خاموش` ➜ حالت کد برنامه نویسی
-`اسپویلر روشن`/`خاموش` ➜ مخفی کردن متن
-`معکوس روشن`/`خاموش` ➜ برعکس نوشتن متن
-`تدریجی روشن`/`خاموش` ➜ تایپ تک به تک حروف
+**✏️ اكشن‌ها (Actions):**
+• `تایپ روشن` / `تایپ خاموش` ➜ تايپ خودكار
+• `بازی روشن` / `بازی خاموش` ➜ حالت البطاقات
+• `سین روشن` / `سین خاموش` ➜ خواندن خودكار
 
-**🔸 قفل‌های پیوی (حذف خودکار پیام دریافتی):**
-`قفل گیف روشن` / `خاموش`
-`قفل عکس روشن` / `خاموش`
-*(سایر قفل‌ها: ویدیو، ویس، استیکر، متن، موزیک، فایل، ویدیو نوت، کانتکت، لوکیشن، ایموجی)*
+**🔤 قالب‌بندی متن:**
+• `بولد روشن`/`خاموش` ➜ **ضخیم**
+• `ایتالیک روشن`/`خاموش` ➜ __مائل__
+• `زیرخط روشن`/`خاموش` ➜ __تحتخط__
+• `خط خورده روشن`/`خاموش` ➜ ~~شطب~~
+• `کد روشن`/`خاموش` ➜ `برنامة`
+• `اسپویلر روشن`/`خاموش` ➜ ||مخفی||
+• `معکوس روشن`/`خاموش` ➜ معكوس
+• `تدریجی روشن`/`خاموش` ➜ حرف به حرف
 
-**🔸 کاربردی:**
-`ساعت روشن` / `خاموش` ➜ ساعت در نام شما
-`ساعت بیو روشن` / `خاموش` ➜ ساعت در بیو
-`تاریخ بیو روشن` / `خاموش` ➜ تاریخ در بیو
-`ترجمه` ➜ (ریپلای) ترجمه متن به فارسی
-`انگلیسی روشن`/`خاموش` ➜ ترجمه خودکار چت شما به انگلیسی
-`(چینی و روسی هم پشتیبانی می‌شود)`
+**🔒 قفل‌های پیوی (Locks):**
+• `قفل متن روشن`/`خاموش`
+• `قفل عکس روشن`/`خاموش`
+• `قفل ویدیو روشن`/`خاموش`
+• `قفل گیف روشن`/`خاموش`
+• `قفل ویس روشن`/`خاموش`
+• `قفل استیکر روشن`/`خاموش`
+• `قفل موزیک روشن`/`خاموش`
+• `قفل فایل روشن`/`خاموش`
 
-**🔸 مدیریت پیام و ابزارها:**
-`حذف [عدد]` ➜ حذف N پیام اخیر خودتان
-`حذف همه` ➜ حذف تمام پیام‌های شما در آن چت
-`تگ` یا `tagall` ➜ تگ همه اعضای گروه
-`تگ ادمین ها` ➜ تگ ادمین‌ها
-`پین` ➜ (ریپلای) پین پیام
-`اسپم [متن] [تعداد]` ➜ ارسال رگباری متن
-`شماره من` ➜ نمایش شماره اکانت
-`(دوست روشن/خاموش)` و `(دشمن روشن/خاموش)` ➜ روشن کردن لیست دوستان/دشمنان
+**🌍 ترجمة تلقائية:**
+• `انگلیسی روشن`/`خاموش` ➜ ترجمة إلى الإنجليزية
+• `چینی روشن`/`خاموش` ➜ ترجمة إلى الصينية
+• `روسی روشن`/`خاموش` ➜ ترجمة إلى الروسية
+• `ترجمه` + ريبلاي ➜ ترجمة يدوية
 
-**🔸 سرگرمی (انیمیشن‌ها):**
-`قلب` | `فان love` | `فان oclock` | `فان star` | `فان snow`
+**⏰ ساعت و تاریخ:**
+• `ساعت روشن`/`خاموش` ➜ ساعت في الاسم
+• `ساعت بیو روشن`/`خاموش` ➜ ساعت في البيو
+• `تاریخ بیو روشن`/`خاموش` ➜ تاریخ في البيو
+
+**👥 لیست‌ها:**
+• `دشمن روشن`/`خاموش` ➜ پاسخ خودکار برای دشمنان
+• `دوست روشن`/`خاموش` ➜ پاسخ خودکار برای دوستان
+• `تنظیم دشمن` + ريبلاي ➜ اضافة شخص للقائمة
+• `لیست دشمن` ➜ عرض قائمة الأعداء
+• `متن دشمن متن، اضافی` ➜ رسائل تلقائية
+
+**🛡️ أمان:**
+• `نتی لوگین روشن`/`خاموش` ➜ حماية الدخول
+• `کپی روشن`/`خاموش` ➜ نسخ الملف الشخصي
+
+**⚙️ المحتويات الأخرى:**
+• `حذف [عدد]` ➜ حذف N رسائل
+• `حذف همه` ➜ حذف جميع رسائلك
+• `تگ` أو `tagall` ➜ وسم الجميع
+• `اسپم [متن] [عدد]` ➜ ارسال رسائل متعددة
 """
-                await event.edit(help_text)
+                help_buttons = [[Button.inline('❌ بستن', b'close_panel')]]
+                await event.edit(help_text, buttons=help_buttons)
                 return
 
             # Status and Action Toggle
@@ -1044,7 +1119,7 @@ class TelethonManager:
                 
                 if media_type in lock_map:
                     db_type = lock_map[media_type]
-                    lock = UserMediaLock.objects(user_id=user.id, media_type=db_type).first()
+                    lock = UserMediaLock.objects(user_id=user.telegram_id, media_type=db_type).first()
                     if not lock:
                         lock = UserMediaLock(user_id=user.id, media_type=db_type)
                     lock.is_enabled = state
@@ -1102,13 +1177,13 @@ class TelethonManager:
                 target_id = reply.sender_id
                 
                 if action == 'add':
-                    existing = model_class.objects(user_id=user.id, target_id=target_id).first()
+                    existing = model_class.objects(user_id=user.telegram_id, target_id=target_id).first()
                     if not existing:
-                        new_entry = model_class(user_id=user.id, target_id=target_id)
+                        new_entry = model_class(user_id=user.telegram_id, target_id=target_id)
                         new_entry.save()
                     await event.edit(f"✅ کاربر به لیست {list_type} اضافه شد.")
                 elif action == 'remove':
-                    model_class.objects(user_id=user.id, target_id=target_id).delete()
+                    model_class.objects(user_id=user.telegram_id, target_id=target_id).delete()
                     await event.edit(f"✅ کاربر از لیست {list_type} حذف شد.")
 
             # Enemy Commands with Custom Messages
@@ -1119,11 +1194,11 @@ class TelethonManager:
                 await manage_list_target(event, text, 'remove', 'دشمن', EnemyList)
                 return
             if text == 'پاکسازی لیست دشمن':
-                EnemyList.objects(user_id=user.id).delete()
+                EnemyList.objects(user_id=user.telegram_id).delete()
                 await event.edit("✅ لیست دشمن پاکسازی شد.")
                 return
             if text == 'لیست دشمن':
-                enemies = EnemyList.objects(user_id=user.id).all()
+                enemies = EnemyList.objects(user_id=user.telegram_id).all()
                 msg = "📜 **لیست دشمنان:**\n" + "\n".join([f"🔸 `{e.target_id}`" for e in enemies])
                 await event.edit(msg if enemies else "لیست دشمن خالی است.")
                 return
@@ -1145,11 +1220,11 @@ class TelethonManager:
                 await manage_list_target(event, text, 'remove', 'دوست', FriendList)
                 return
             if text == 'پاکسازی لیست دوست':
-                FriendList.objects(user_id=user.id).delete()
+                FriendList.objects(user_id=user.telegram_id).delete()
                 await event.edit("✅ لیست دوست پاکسازی شد.")
                 return
             if text == 'لیست دوست':
-                friends = FriendList.objects(user_id=user.id).all()
+                friends = FriendList.objects(user_id=user.telegram_id).all()
                 msg = "📜 **لیست دوستان:**\n" + "\n".join([f"🔸 `{f.target_id}`" for f in friends])
                 await event.edit(msg if friends else "لیست دوست خالی است.")
                 return
@@ -1162,11 +1237,11 @@ class TelethonManager:
                 await manage_list_target(event, text, 'remove', 'کراش', CrushList)
                 return
             if text == 'پاکسازی لیست کراش':
-                CrushList.objects(user_id=user.id).delete()
+                CrushList.objects(user_id=user.telegram_id).delete()
                 await event.edit("✅ لیست کراش پاکسازی شد.")
                 return
             if text == 'لیست کراش':
-                crushes = CrushList.objects(user_id=user.id).all()
+                crushes = CrushList.objects(user_id=user.telegram_id).all()
                 msg = "📜 **لیست کراش‌ها:**\n" + "\n".join([f"🔸 `{c.target_id}`" for c in crushes])
                 await event.edit(msg if crushes else "لیست کراش خالی است.")
                 return
@@ -1643,7 +1718,7 @@ class TelethonManager:
             import random
             
             # ✅ دشمن - پاسخ خودکار با متن‌های custom
-            enemy = EnemyList.objects(user_id=user.id, target_id=sender_id).first()
+            enemy = EnemyList.objects(user_id=user.telegram_id, target_id=sender_id).first()
             if enemy and enemy.is_enabled:
                 # اولویت: custom_messages از EnemyList یا enemy_messages از User
                 messages = enemy.custom_messages if enemy.custom_messages else user.enemy_messages
@@ -1655,7 +1730,7 @@ class TelethonManager:
                         pass
             
             # ✅ کراش - پاسخ خودکار با متن‌های custom          
-            crush = CrushList.objects(user_id=user.id, target_id=sender_id).first()
+            crush = CrushList.objects(user_id=user.telegram_id, target_id=sender_id).first()
             if crush and crush.is_enabled:
                 # اولویت: custom_messages از CrushList یا crush_messages از User
                 messages = crush.custom_messages if crush.custom_messages else user.crush_messages
@@ -1667,7 +1742,7 @@ class TelethonManager:
                         pass
             
             # ✅ دوست - بدون پاسخ (فقط نشان‌دادن لیست)
-            friend = FriendList.objects(user_id=user.id, target_id=sender_id).first()
+            friend = FriendList.objects(user_id=user.telegram_id, target_id=sender_id).first()
             # دوستان نیازی به پاسخ خودکار ندارند
 
         # ============ CALLBACK HANDLERS FOR PANEL BUTTONS ============
@@ -1725,36 +1800,36 @@ class TelethonManager:
             
             # Media Locks
             elif data == 'toggle_lock_text':
-                lock = UserMediaLock.objects(user_id=user.id, media_type='text').first()
+                lock = UserMediaLock.objects(user_id=user.telegram_id, media_type='text').first()
                 if not lock:
-                    lock = UserMediaLock(user_id=user.id, media_type='text')
+                    lock = UserMediaLock(user_id=user.telegram_id, media_type='text')
                 lock.is_enabled = not lock.is_enabled
                 lock.save()
                 state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
                 await event.answer(f"قفل متن {state} شد")
             
             elif data == 'toggle_lock_photo':
-                lock = UserMediaLock.objects(user_id=user.id, media_type='photo').first()
+                lock = UserMediaLock.objects(user_id=user.telegram_id, media_type='photo').first()
                 if not lock:
-                    lock = UserMediaLock(user_id=user.id, media_type='photo')
+                    lock = UserMediaLock(user_id=user.telegram_id, media_type='photo')
                 lock.is_enabled = not lock.is_enabled
                 lock.save()
                 state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
                 await event.answer(f"قفل عکس {state} شد")
             
             elif data == 'toggle_lock_video':
-                lock = UserMediaLock.objects(user_id=user.id, media_type='video').first()
+                lock = UserMediaLock.objects(user_id=user.telegram_id, media_type='video').first()
                 if not lock:
-                    lock = UserMediaLock(user_id=user.id, media_type='video')
+                    lock = UserMediaLock(user_id=user.telegram_id, media_type='video')
                 lock.is_enabled = not lock.is_enabled
                 lock.save()
                 state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
                 await event.answer(f"قفل ویدیو {state} شد")
             
             elif data == 'toggle_lock_gif':
-                lock = UserMediaLock.objects(user_id=user.id, media_type='gif').first()
+                lock = UserMediaLock.objects(user_id=user.telegram_id, media_type='gif').first()
                 if not lock:
-                    lock = UserMediaLock(user_id=user.id, media_type='gif')
+                    lock = UserMediaLock(user_id=user.telegram_id, media_type='gif')
                 lock.is_enabled = not lock.is_enabled
                 lock.save()
                 state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
@@ -1800,7 +1875,7 @@ __ زیرخط ➜ خط زیر متن
             
             # Back to Panel
             elif data == 'back_panel':
-                active_locks = UserMediaLock.objects(user_id=user.id, is_enabled=True).all()
+                active_locks = UserMediaLock.objects(user_id=user.telegram_id, is_enabled=True).all()
                 locked_types = [lock.media_type for lock in active_locks]
                 def lck(t): return '✅' if t in locked_types else '❌'
                 def st(k): return '✅' if user.self_settings.get(k) else '❌'
@@ -1885,6 +1960,16 @@ __ زیرخط ➜ خط زیر متن
                     ]]
                     await event.edit(panel_text, buttons=buttons)
             
+            # Language Selection
+            elif data.startswith('lang_'):
+                lang_code = data.replace('lang_', '')
+                user.language = lang_code
+                user.language_selected = True
+                user.save()
+                
+                lang_names = {'fa': '🇮🇷 فارسی', 'en': '🇬🇧 English', 'ru': '🇷🇺 Русский', 'ar': '🇸🇦 العربية'}
+                await event.edit(f"✅ زبان به {lang_names.get(lang_code, lang_code)} تنظیم شد.\n\n📚 برای دستورات، `راهنما` را ارسال کنید.\n🎛 برای پنل، `پنل` را ارسال کنید.")
+            
             await event.answer()
 
         # ---------------- 2. Incoming PV Interceptor (Locks & Auto-Seen) ----------------
@@ -1899,7 +1984,7 @@ __ زیرخط ➜ خط زیر متن
                 await client.send_read_acknowledge(event.chat_id)
 
             # Check PV Locks
-            active_locks = UserMediaLock.objects(user_id=user.id, is_enabled=True).all()
+            active_locks = UserMediaLock.objects(user_id=user.telegram_id, is_enabled=True).all()
             locked_types = [lock.media_type for lock in active_locks]
 
             should_delete = False
@@ -2592,13 +2677,13 @@ def create_app():
         
         # Delete all related data
         UserSession.objects(user_id=user.telegram_id).delete()
-        Payment.objects(user_id=user.id).delete()
-        UserMediaLock.objects(user_id=user.id).delete()
-        UserTextFormat.objects(user_id=user.id).delete()
-        UserStatusAction.objects(user_id=user.id).delete()
-        EnemyList.objects(user_id=user.id).delete()
-        FriendList.objects(user_id=user.id).delete()
-        CrushList.objects(user_id=user.id).delete()
+        Payment.objects(user_id=user.telegram_id).delete()
+        UserMediaLock.objects(user_id=user.telegram_id).delete()
+        UserTextFormat.objects(user_id=user.telegram_id).delete()
+        UserStatusAction.objects(user_id=user.telegram_id).delete()
+        EnemyList.objects(user_id=user.telegram_id).delete()
+        FriendList.objects(user_id=user.telegram_id).delete()
+        CrushList.objects(user_id=user.telegram_id).delete()
         
         user.delete()
         
