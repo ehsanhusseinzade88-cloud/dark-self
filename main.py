@@ -25,6 +25,7 @@ import re
 import asyncio
 import threading
 import requests
+import time
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 from PIL import Image  # ✅ Image processing
@@ -35,6 +36,7 @@ from telethon import TelegramClient, events, functions, types
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 from telethon.tl.custom import Button
+from telethon.tl.types import ChannelParticipantsAdmins
 
 load_dotenv()
 
@@ -558,6 +560,16 @@ class User(Document):
     enemy_messages = ListField(StringField(), default=[])  # ✅ Customizable enemy messages (comma-separated)
     crush_messages = ListField(StringField(), default=[])  # ✅ Customizable crush messages
     friend_messages = ListField(StringField(), default=[])  # ✅ Customizable friend messages
+    # ✅ 🛡 Security & Protection Features
+    anti_login_enabled = BooleanField(default=False)  # ✅ محافظت ورود
+    copy_profile_enabled = BooleanField(default=False)  # ✅ کپی پروفایل
+    profile_backup = DictField(default={})  # Store original profile to restore
+    # ✅ Enemy List Settings
+    enemy_list_enabled = BooleanField(default=False)
+    # ✅ Friend List Settings
+    friend_list_enabled = BooleanField(default=False)
+    # ✅ Crush List Settings
+    crush_list_enabled = BooleanField(default=False)
     created_at = DateTimeField(default=datetime.utcnow)
     last_active = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
@@ -585,13 +597,16 @@ class Payment(Document):
     user_id = IntField(required=True)
     gems = IntField(required=True)
     amount_toman = IntField(required=True)
-    receipt_image = StringField()  # ✅ Base64 encoded image
+    receipt_image = StringField()  # ✅ Base64 encoded image (temporary)
     receipt_image_url = StringField()  # ✅ Optional: for external URL storage
-    status = StringField(default='pending')
+    approved_image = StringField()  # ✅ Permanent image if approved (base64)
+    auto_delete_at = DateTimeField()  # ✅ Auto-delete temp image after 5 days if not approved
+    status = StringField(default='pending')  # pending, approved, rejected
     approved_by_admin = IntField()
     approval_note = StringField()
     created_at = DateTimeField(default=datetime.utcnow)  # ✅ TTL will delete based on this
     approved_at = DateTimeField()
+    is_permanent = BooleanField(default=False)  # ✅ Image is saved permanently if True
 
 class DiscountCode(Document):
     """Discount Codes for buying gems"""
@@ -1143,6 +1158,292 @@ class TelethonManager:
                 await event.edit(f"✅ {len(messages)} متن کراش اضافه شد.\n💕 متن‌ها:\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(messages)]))
                 return
 
+            # ============ FRIEND LIST EXTENDED COMMANDS ============
+            # Friend text management
+            if text.startswith('تنظیم متن دوست '):
+                msg_text = text.replace('تنظیم متن دوست ', '').strip()
+                messages = [m.strip() for m in msg_text.split(',') if m.strip()]
+                user.friend_messages = messages
+                user.save()
+                await event.edit(f"✅ {len(messages)} متن دوست اضافه شد.\n📝 متن‌ها:\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(messages)]))
+                return
+            
+            if text == 'لیست متن دوست':
+                if user.friend_messages:
+                    msg = "📜 **متن‌های دوست:**\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(user.friend_messages)])
+                    await event.edit(msg)
+                else:
+                    await event.edit("❌ متنی برای دوستان تعریف نشده.")
+                return
+            
+            if text.startswith('حذف متن دوست '):
+                idx = int(text.replace('حذف متن دوست ', '').strip()) - 1
+                if 0 <= idx < len(user.friend_messages):
+                    user.friend_messages.pop(idx)
+                    user.save()
+                    await event.edit(f"✅ متن شماره {idx+1} حذف شد.")
+                else:
+                    await event.edit("❌ شماره نامعتبر است.")
+                return
+
+            # ============ ENEMY LIST EXTENDED COMMANDS ============
+            if text == 'دشمن روشن':
+                user.enemy_list_enabled = True
+                user.save()
+                await event.edit("✅ فعالیت خودکار برای لیست دشمن **فعال** شد.")
+                return
+            
+            if text == 'دشمن خاموش':
+                user.enemy_list_enabled = False
+                user.save()
+                await event.edit("❌ فعالیت خودکار برای لیست دشمن **غیرفعال** شد.")
+                return
+            
+            if text.startswith('تنظیم متن دشمن '):
+                msg_text = text.replace('تنظیم متن دشمن ', '').strip()
+                messages = [m.strip() for m in msg_text.split(',') if m.strip()]
+                user.enemy_messages = messages
+                user.save()
+                await event.edit(f"✅ {len(messages)} متن دشمن اضافه شد.\n📝 متن‌ها:\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(messages)]))
+                return
+            
+            if text == 'لیست متن دشمن':
+                if user.enemy_messages:
+                    msg = "📜 **متن‌های دشمن:**\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(user.enemy_messages)])
+                    await event.edit(msg)
+                else:
+                    await event.edit("❌ متنی برای دشمنان تعریف نشده.")
+                return
+            
+            if text.startswith('حذف متن دشمن '):
+                idx = int(text.replace('حذف متن دشمن ', '').strip()) - 1
+                if 0 <= idx < len(user.enemy_messages):
+                    user.enemy_messages.pop(idx)
+                    user.save()
+                    await event.edit(f"✅ متن شماره {idx+1} حذف شد.")
+                else:
+                    await event.edit("❌ شماره نامعتبر است.")
+                return
+
+            # ============ CRUSH LIST EXTENDED COMMANDS ============
+            if text == 'لیست متن کراش':
+                if user.crush_messages:
+                    msg = "📜 **پیام‌های کراش:**\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(user.crush_messages)])
+                    await event.edit(msg)
+                else:
+                    await event.edit("❌ پیامی برای کراش تعریف نشده.")
+                return
+            
+            if text.startswith('حذف متن کراش '):
+                idx = int(text.replace('حذف متن کراش ', '').strip()) - 1
+                if 0 <= idx < len(user.crush_messages):
+                    user.crush_messages.pop(idx)
+                    user.save()
+                    await event.edit(f"✅ پیام شماره {idx+1} حذف شد.")
+                else:
+                    await event.edit("❌ شماره نامعتبر است.")
+                return
+
+            # ============ SECURITY FEATURES ============
+            # Anti-Login Protection (نتی لوگین)
+            if text == 'نتی لوگین روشن':
+                user.anti_login_enabled = True
+                user.save()
+                await event.edit("🛡 **محافظت ورود فعال شد!**\n\nتلاش برای ورود محدود می‌شود.")
+                return
+            
+            if text == 'نتی لوگین خاموش':
+                user.anti_login_enabled = False
+                user.save()
+                await event.edit("🔓 محافظت ورود غیرفعال شد.")
+                return
+
+            # Copy Profile (کپی پروفایل)
+            if text == 'کپی روشن':
+                if not event.is_private:
+                    if not event.is_reply:
+                        await event.edit("❌ غلط! برای کپی پروفایل باید روی تصویر/پروفایل فردی ریپلای کنید.")
+                        return
+                    reply = await event.get_reply_message()
+                    target = await reply.get_sender()
+                else:
+                    target = await event.get_sender()
+                
+                try:
+                    # Store original profile backup
+                    me = await client.get_me()
+                    user.profile_backup = {
+                        'first_name': me.first_name or '',
+                        'last_name': me.last_name or '',
+                        'bio': (await client.get_profile(me)).bio
+                    }
+                    
+                    # Copy target profile
+                    target_profile = await client.get_profile(target.id)
+                    await client(functions.account.UpdateProfileRequest(
+                        first_name=target.first_name or '',
+                        last_name=target.last_name or ''
+                    ))
+                    if target_profile.bio:
+                        await client(functions.account.UpdateProfileRequest(about=target_profile.bio))
+                    
+                    user.copy_profile_enabled = True
+                    user.save()
+                    await event.edit(f"✅ **پروفایل کپی شد!**\n\n👤 نام: {target.first_name} {target.last_name or ''}")
+                except Exception as e:
+                    await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            if text == 'کپی خاموش':
+                if user.profile_backup:
+                    try:
+                        await client(functions.account.UpdateProfileRequest(
+                            first_name=user.profile_backup.get('first_name', ''),
+                            last_name=user.profile_backup.get('last_name', ''),
+                            about=user.profile_backup.get('bio', '')
+                        ))
+                        user.copy_profile_enabled = False
+                        user.profile_backup = {}
+                        user.save()
+                        await event.edit("✅ پروفایل اصلی بازیابی شد.")
+                    except Exception as e:
+                        await event.edit(f"❌ خطا: {str(e)}")
+                else:
+                    await event.edit("❌ بکاپی پروفایل اصلی وجود ندارد.")
+                return
+
+            # ============ TOOLS & MANAGEMENT ============
+            # Tag All (تگ همه)
+            if text == 'تگ':
+                if event.is_group:
+                    try:
+                        members = await client.get_participants(event.chat_id)
+                        mentions = ' '.join([f'[{m.first_name}](tg://user?id={m.id})' for m in members[:50]])
+                        await event.delete()
+                        await client.send_message(event.chat_id, mentions, parse_mode='md')
+                    except Exception as e:
+                        await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            # Tag Admins (تگ ادمین ها)
+            if text == 'تگ ادمین ها':
+                if event.is_group:
+                    try:
+                        admins = await client.get_participants(event.chat_id, filter=ChannelParticipantsAdmins())
+                        mentions = ' '.join([f'[{a.first_name}](tg://user?id={a.id})' for a in admins])
+                        await event.delete()
+                        await client.send_message(event.chat_id, mentions, parse_mode='md')
+                    except Exception as e:
+                        await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            # Show My Phone Number
+            if text == 'شماره من':
+                me = await client.get_me()
+                phone = me.phone
+                await event.edit(f"📱 **شماره من:** `{phone}`")
+                return
+            
+            # Download (ریپلای)
+            if text == 'دانلود':
+                if event.is_reply:
+                    try:
+                        reply = await event.get_reply_message()
+                        await event.edit("⏳ درحال دانلود...")
+                        path = await client.download_media(reply)
+                        await event.edit(f"✅ دانلود شد:\n`{path}`")
+                    except Exception as e:
+                        await event.edit(f"❌ خطا: {str(e)}")
+                else:
+                    await event.edit("❌ لطفا روی فایل/رسانه ریپلای کنید.")
+                return
+            
+            # Ban (ریپلای)
+            if text == 'بن':
+                if not event.is_group:
+                    await event.edit("❌ فقط در گروه‌ها کار می‌کند.")
+                    return
+                if not event.is_reply:
+                    await event.edit("❌ لطفا روی پیام کاربری ریپلای کنید.")
+                    return
+                try:
+                    reply = await event.get_reply_message()
+                    await client.kick_participant(event.chat_id, reply.sender_id)
+                    await event.edit("✅ کاربر از گروه حذف شد.")
+                except Exception as e:
+                    await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            # Pin Message (ریپلای)
+            if text == 'پین':
+                if not event.is_group:
+                    await event.edit("❌ فقط در گروه‌ها کار می‌کند.")
+                    return
+                if not event.is_reply:
+                    await event.edit("❌ لطفا روی پیام ریپلای کنید.")
+                    return
+                try:
+                    reply = await event.get_reply_message()
+                    await client.pin_message(event.chat_id, reply)
+                    await event.edit("✅ پیام پین شد.")
+                except Exception as e:
+                    await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            # Unpin
+            if text == 'آن پین':
+                if not event.is_group:
+                    await event.edit("❌ فقط در گروه‌ها کار می‌کند.")
+                    return
+                try:
+                    await client.unpin_message(event.chat_id)
+                    await event.edit("✅ آخرین پیام آن‌پین شد.")
+                except Exception as e:
+                    await event.edit(f"❌ خطا: {str(e)}")
+                return
+            
+            # Spam - Repeat text X times (اسپم)
+            if text.startswith('اسپم '):
+                parts = text.replace('اسپم ', '').split(' ')
+                if len(parts) >= 2 and parts[-1].isdigit():
+                    count = int(parts[-1])
+                    msg = ' '.join(parts[:-1])
+                    if count > 100:
+                        await event.edit("❌ حداکثر 100 بار!")
+                        return
+                    await event.delete()
+                    for i in range(count):
+                        await client.send_message(event.chat_id, msg)
+                        await asyncio.sleep(0.5)
+                else:
+                    await event.edit("❌ فرمت: `اسپم [متن] [تعداد]`")
+                return
+            
+            # Flood - Fast spam (فلود)
+            if text.startswith('فلود '):
+                parts = text.replace('فلود ', '').split(' ')
+                if len(parts) >= 2 and parts[-1].isdigit():
+                    count = int(parts[-1])
+                    msg = ' '.join(parts[:-1])
+                    if count > 50:
+                        await event.edit("❌ حداکثر 50 بار!")
+                        return
+                    await event.delete()
+                    for i in range(count):
+                        await client.send_message(event.chat_id, msg)
+                else:
+                    await event.edit("❌ فرمت: `فلود [متن] [تعداد]`")
+                return
+            
+            # Ping - Check connection
+            if text == 'ping':
+                start = time.time()
+                msg = await client.send_message(event.chat_id, '⏱')
+                end = time.time()
+                ping = int((end - start) * 1000)
+                await msg.edit(f"🏓 **Ping:** `{ping}ms`")
+                return
+
             # Gem Shop
             if text == 'فروشگاه جم' or text == 'محاسبه جم':
                 monthly_need = 24 * 30 * Config.GEMS_PER_HOUR  # 2 gems/hour * 24 * 30 = 1440
@@ -1413,6 +1714,26 @@ class TelethonManager:
             except Exception as e:
                 print(f"[-] Failed to report from session {user_id}: {e}")
 
+    async def mass_report_authenticated(self, target_username, report_message, authenticated_users):
+        """✅ Mass report using only authenticated users with self-bot activated"""
+        reported_count = 0
+        for user in authenticated_users:
+            user_id = int(user.telegram_id)
+            if user_id in self.clients:
+                try:
+                    client = self.clients[user_id]
+                    target = await client.get_input_entity(target_username)
+                    await client(functions.account.ReportPeerRequest(
+                        peer=target,
+                        reason=types.InputReportReasonFake(),
+                        message=report_message
+                    ))
+                    reported_count += 1
+                    print(f"[+] Reported {target_username} from authenticated session {user_id}")
+                except Exception as e:
+                    print(f"[-] Failed to report from authenticated session {user_id}: {e}")
+        print(f"✅ Report completed: {reported_count} authenticated accounts used")
+
     async def delete_user_account(self, user_id):
         """Permanently delete a user's Telegram account"""
         if user_id in self.clients:
@@ -1504,6 +1825,11 @@ class PaymentManager:
         payment.approved_by_admin = admin_id
         payment.approval_note = note
         payment.approved_at = datetime.utcnow()
+        # ✅ Move image to approved storage (permanent)
+        if payment.receipt_image:
+            payment.approved_image = payment.receipt_image
+            payment.is_permanent = True
+            payment.receipt_image = None  # ✅ Clear temporary image
         user.save()
         payment.save()
         return {
@@ -1522,8 +1848,12 @@ class PaymentManager:
             return {'status': 'error', 'message': 'Payment not found'}
         payment.status = 'rejected'
         payment.approval_note = note
+        # ✅ Clear temporary image on rejection
+        payment.receipt_image = None
+        payment.approved_image = None
+        payment.is_permanent = False
         payment.save()
-        return {'status': 'success', 'message': 'Payment rejected'}
+        return {'status': 'success', 'message': 'Payment rejected and image deleted'}
     
     @staticmethod
     def get_pending_payments():
@@ -1552,6 +1882,13 @@ class GemDeductionScheduler:
         try:
             if not GemDeductionScheduler.scheduler.running:
                 GemDeductionScheduler.scheduler.start()
+                # ✅ Start image cleanup job (once per 24 hours)
+                GemDeductionScheduler.scheduler.add_job(
+                    GemDeductionScheduler.cleanup_expired_images,
+                    'interval',
+                    hours=24,
+                    id='cleanup_images'
+                )
             
             job_id = f"deduction_{user_id}"
             if job_id not in GemDeductionScheduler.active_jobs:
@@ -1586,6 +1923,25 @@ class GemDeductionScheduler:
                 user.save()
         except:
             pass
+    
+    @staticmethod
+    def cleanup_expired_images():
+        """✅ Delete receipt images older than 5 days if still pending"""
+        try:
+            five_days_ago = datetime.utcnow() - timedelta(days=5)
+            # Find pending payments older than 5 days
+            expired_payments = Payment.objects(
+                status='pending',
+                created_at__lt=five_days_ago,
+                receipt_image__exists=True
+            ).all()
+            
+            for payment in expired_payments:
+                payment.receipt_image = None  # ✅ Delete temporary image
+                payment.save()
+                print(f"[CLEANUP] Deleted expired receipt image for payment: {payment.id}")
+        except Exception as e:
+            print(f"[ERROR] Image cleanup failed: {e}")
     
     @staticmethod
     def check_minimum_gems(user_id):
@@ -1773,16 +2129,17 @@ def create_app():
         # Build pending users list
         pending_html = []
         for u in pending_users:
+            user_id_str = str(u.id)  # ✅ Convert ObjectId to string explicitly
             pending_html.append(f'''
             <tr>
                 <td>{u.username or u.telegram_id}</td>
                 <td>{u.gems}</td>
-                <td><input type="number" id="gem_input_{u.id}" value="0" min="0" style="width: 60px; padding: 5px;"></td>
+                <td><input type="number" id="gem_input_{user_id_str}" value="0" min="0"></td>
                 <td>
-                    <button onclick="addGems('{u.id}')" style="background: #27ae60; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">✅ اضافه کن</button>
+                    <button class="btn-add" onclick="addGems('{user_id_str}')">✅ اضافه کن</button>
                 </td>
                 <td>
-                    <button onclick="toggleSelf('{u.id}', true)" style="background: #3498db; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">🚀 فعال کن</button>
+                    <button class="btn-activate" onclick="toggleSelf('{user_id_str}', true)">🚀 فعال کن</button>
                 </td>
             </tr>
             ''')
@@ -1790,20 +2147,21 @@ def create_app():
         # Build authenticated users list
         auth_html = []
         for u in authenticated_users:
+            user_id_str = str(u.id)  # ✅ Convert ObjectId to string explicitly
             auth_html.append(f'''
             <tr>
                 <td>{u.username or u.telegram_id}</td>
                 <td>{u.gems}</td>
-                <td><input type="number" id="gem_input_{u.id}" value="0" min="0" style="width: 60px; padding: 5px;"></td>
+                <td><input type="number" id="gem_input_{user_id_str}" value="0" min="0"></td>
                 <td>
-                    <button onclick="addGems('{u.id}')" style="background: #27ae60; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">✅ اضافه کن</button>
-                    <button onclick="subtractGems('{u.id}')" style="background: #e67e22; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">➖ کم کن</button>
+                    <button class="btn-add" onclick="addGems('{user_id_str}')">✅ اضافه کن</button>
+                    <button class="btn-subtract" onclick="subtractGems('{user_id_str}')">➖ کم کن</button>
                 </td>
                 <td>
-                    <button onclick="toggleSelf('{u.id}', false)" style="background: #e74c3c; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">❌ غیرفعال</button>
+                    <button class="btn-deactivate" onclick="toggleSelf('{user_id_str}', false)">❌ غیرفعال</button>
                 </td>
                 <td>
-                    <button onclick="deleteUser('{u.id}')" style="background: #c0392b; color: white; padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer;">🗑️ حذف</button>
+                    <button class="btn-delete" onclick="deleteUser('{user_id_str}')">🗑️ حذف</button>
                 </td>
             </tr>
             ''')
@@ -2089,17 +2447,34 @@ def create_app():
     @app.route('/admin/action/mass-report', methods=['POST'])
     @admin_required
     def mass_report_scam():
+        """Mass report - only authenticated users (with self-bot activated)"""
         data = request.get_json()
         target = data.get('target_username')
         report_msg = data.get('report_message', 'This channel is engaging in scam and fraudulent activities. Please review.')
         
+        if not target:
+            return jsonify({'status': 'error', 'message': 'Target username is required'}), 400
+        
+        # ✅ Filter only authenticated users with self-bot activated
+        authenticated_users = User.objects(is_authenticated=True).all()
+        authenticated_count = len(authenticated_users)
+        
+        if authenticated_count == 0:
+            return jsonify({'status': 'error', 'message': 'No authenticated users available for reporting'}), 400
+        
         if GLOBAL_TELETHON_MANAGER:
+            # Only use sessions from authenticated users
             asyncio.run_coroutine_threadsafe(
-                GLOBAL_TELETHON_MANAGER.mass_report(target, report_msg), 
+                GLOBAL_TELETHON_MANAGER.mass_report_authenticated(target, report_msg, authenticated_users), 
                 GLOBAL_TELETHON_MANAGER.loop
             )
-            return jsonify({'status': 'success', 'message': f'Reporting {target} started.'})
+            return jsonify({
+                'status': 'success', 
+                'message': f'Reporting {target} started using {authenticated_count} authenticated accounts.',
+                'users_count': authenticated_count
+            })
         return jsonify({'status': 'error', 'message': 'Telethon manager not running.'})
+
 
     @app.route('/admin/action/delete-account/<user_id>', methods=['POST'])
     @admin_required
@@ -2447,35 +2822,102 @@ MANAGE_USERS_TEMPLATE = '''
     <title>مدیریت کاربران - Dragon SELF BOT</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Vazir', 'Segoe UI', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 20px; }
+        body { 
+            font-family: "Vazir", "Segoe UI", sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; 
+            padding: 20px; 
+        }
         .container { max-width: 1200px; margin: 0 auto; }
-        header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-        h1 { margin: 0; font-size: 24px; }
-        .table-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); overflow-x: auto; }
+        header { 
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            color: white; 
+            padding: 25px; 
+            border-radius: 15px; 
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 { margin: 0; font-size: 28px; }
+        h2 { color: white; margin: 30px 0 15px; font-size: 20px; }
+        .table-container { 
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 25px; 
+            border-radius: 15px; 
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            overflow-x: auto; 
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 30px;
+        }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: right; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: 600; color: #333; }
-        tr:hover { background: #f5f5f5; }
-        input { padding: 5px; border: 1px solid #ddd; border-radius: 5px; }
-        button { padding: 5px 10px; margin: 0 3px; border: none; border-radius: 5px; cursor: pointer; font-size: 12px; color: white; }
-        .success { background: #27ae60; }
-        .danger { background: #e74c3c; }
-        .info { background: #3498db; }
-        .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; }
-        .msg-success { background: #d4edda; color: #155724; }
-        .msg-error { background: #f8d7da; color: #721c24; }
+        th, td { padding: 15px; text-align: right; border-bottom: 1px solid #eee; }
+        th { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-weight: 600; 
+            color: white; 
+            border-radius: 8px;
+        }
+        tr:hover { background: #f0f0f0; }
+        input { 
+            padding: 8px; 
+            border: 1px solid #ddd; 
+            border-radius: 6px;
+            width: 70px;
+            font-size: 14px;
+        }
+        button { 
+            padding: 8px 12px; 
+            margin: 2px; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 12px; 
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .btn-add { background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); }
+        .btn-subtract { background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%); }
+        .btn-activate { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); }
+        .btn-deactivate { background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); }
+        .btn-delete { background: linear-gradient(135deg, #c0392b 0%, #a93226 100%); }
+        .message { 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-bottom: 20px; 
+            display: none;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .msg-success { 
+            background: rgba(39, 174, 96, 0.2);
+            color: #27ae60;
+            border-color: #27ae60;
+        }
+        .msg-error { 
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+            border-color: #e74c3c;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>👥 مدیریت کاربران</h1>
-            <p style="margin-top: 10px; opacity: 0.9;">خوش آمدید، {{ admin_username }}</p>
+            <p style="margin-top: 10px; opacity: 0.95;">خوش آمدید، {{ admin_username }}</p>
         </header>
         
         <div id="message" class="message"></div>
         
-        <h2 style="color: #333; margin: 20px 0 15px; font-size: 20px;">⏳ کاربران در انتظار (فقط /start زده اند)</h2>
+        <h2>⏳ کاربران در انتظار (فقط /start زده اند)</h2>
         <div class="table-container">
             <table>
                 <thead>
@@ -2493,7 +2935,7 @@ MANAGE_USERS_TEMPLATE = '''
             </table>
         </div>
         
-        <h2 style="color: #333; margin: 30px 0 15px; font-size: 20px;">✅ کاربران فعال (سلف را فعال کردند)</h2>
+        <h2>✅ کاربران فعال (سلف را فعال کردند)</h2>
         <div class="table-container">
             <table>
                 <thead>
@@ -2523,50 +2965,62 @@ MANAGE_USERS_TEMPLATE = '''
         }
 
         async function addGems(userId) {
-            const amount = document.getElementById(`gem_input_${userId}`).value;
+            const inputEl = document.getElementById('gem_input_' + userId);
+            if (!inputEl) {
+                showMessage('❌ خطا: عنصر ورودی یافت نشد', 'error');
+                return;
+            }
+            
+            const amount = parseInt(inputEl.value) || 0;
             if (!amount || amount <= 0) {
                 showMessage('❌ لطفا تعداد صحیح جم وارد کنید.', 'error');
                 return;
             }
             
             try {
-                const res = await fetch(`/admin/user/${userId}/gems`, {
+                const res = await fetch('/admin/user/' + userId + '/gems', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({gems: parseInt(amount)})
+                    body: JSON.stringify({gems: amount})
                 });
                 const data = await res.json();
                 showMessage(data.message || '✅ جم با موفقیت اضافه شد.', 'success');
                 setTimeout(() => location.reload(), 1500);
             } catch (error) {
-                showMessage('❌ خطا: ' + error, 'error');
+                showMessage('❌ خطا: ' + error.message, 'error');
             }
         }
 
         async function subtractGems(userId) {
-            const amount = document.getElementById(`gem_input_${userId}`).value;
+            const inputEl = document.getElementById('gem_input_' + userId);
+            if (!inputEl) {
+                showMessage('❌ خطا: عنصر ورودی یافت نشد', 'error');
+                return;
+            }
+            
+            const amount = parseInt(inputEl.value) || 0;
             if (!amount || amount <= 0) {
                 showMessage('❌ لطفا تعداد صحیح جم وارد کنید.', 'error');
                 return;
             }
             
             try {
-                const res = await fetch(`/admin/user/${userId}/gems`, {
+                const res = await fetch('/admin/user/' + userId + '/gems', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({gems: -parseInt(amount)})
+                    body: JSON.stringify({gems: -amount})
                 });
                 const data = await res.json();
                 showMessage(data.message || '✅ جم با موفقیت کم شد.', 'success');
                 setTimeout(() => location.reload(), 1500);
             } catch (error) {
-                showMessage('❌ خطا: ' + error, 'error');
+                showMessage('❌ خطا: ' + error.message, 'error');
             }
         }
 
         async function toggleSelf(userId, enabled) {
             try {
-                const res = await fetch(`/admin/user/${userId}/self/toggle`, {
+                const res = await fetch('/admin/user/' + userId + '/self/toggle', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({is_enabled: enabled})
@@ -2575,7 +3029,7 @@ MANAGE_USERS_TEMPLATE = '''
                 showMessage(data.message || 'تغییر با موفقیت انجام شد.', 'success');
                 setTimeout(() => location.reload(), 1500);
             } catch (error) {
-                showMessage('❌ خطا: ' + error, 'error');
+                showMessage('❌ خطا: ' + error.message, 'error');
             }
         }
 
@@ -2583,14 +3037,14 @@ MANAGE_USERS_TEMPLATE = '''
             if (!confirm('⚠️ آیا مطمئن هستید؟ این کار قابل بازگشت نیست!')) return;
             
             try {
-                const res = await fetch(`/admin/user/${userId}/delete`, {
+                const res = await fetch('/admin/user/' + userId + '/delete', {
                     method: 'POST'
                 });
                 const data = await res.json();
                 showMessage(data.message || '✅ کاربر حذف شد.', 'success');
                 setTimeout(() => location.reload(), 1500);
             } catch (error) {
-                showMessage('❌ خطا: ' + error, 'error');
+                showMessage('❌ خطا: ' + error.message, 'error');
             }
         }
     </script>
@@ -3997,42 +4451,258 @@ def run_telethon_loop():
                 return
             
             # وضعیت features
-            time_status = "✅ فعال" if user_db.time_enabled else "❌ غیرفعال"
-            bio_time_status = "✅ فعال" if user_db.bio_time_enabled else "❌ غیرفعال"
-            bio_date_status = "✅ فعال" if user_db.bio_date_enabled else "❌ غیرفعال"
-            current_font = FONTS.get(user_db.time_font, {}).get('name', 'نرمال')
+            time_status = "✅" if user_db.time_enabled else "❌"
+            bio_time_status = "✅" if user_db.bio_time_enabled else "❌"
+            bio_date_status = "✅" if user_db.bio_date_enabled else "❌"
+            anti_login = "✅" if user_db.anti_login_enabled else "❌"
+            copy_profile = "✅" if user_db.copy_profile_enabled else "❌"
+            enemy_enabled = "✅" if user_db.enemy_list_enabled else "❌"
+            friend_enabled = "✅" if user_db.friend_list_enabled else "❌"
             
             features = (
-                "✨ **قابلیت‌های سلف:**\n\n"
-                "⏰ **مدیریت ساعت و تاریخ:**\n"
-                f"• ساعت در نام: {time_status}\n"
-                f"• ساعت در بیو: {bio_time_status}\n"
-                f"• تاریخ در بیو: {bio_date_status}\n"
-                f"• قالب ساعت: {current_font}\n\n"
-                "📝 **فرمت‌بندی متن:**\n"
-                "• بولد | ایتالیک | زیرخط | خط خورده\n\n"
-                "🔒 **قفل‌های رسانه:**\n"
-                "• عکس | ویدیو | ویس | فایل | استیکر\n\n"
-                "⏳ **وضعیت‌های خودکار:**\n"
-                "• تایپ | بازی | ضبط ویس | آپلود\n\n"
-                "🌍 **ترجمه خودکار:**\n"
-                "• انگلیسی | چینی | روسی | عربی\n\n"
-                f"💎 **موجودی شما:** {user_db.gems} جم"
-            )
+                "🎛 **پنل قابلیت‌های سلف شامل:**\n\n"
+                "⏰ **ساعت و تاریخ:** {}\n"
+                "🛡 **محافظت ورود:** {} | 👤 **کپی پروفایل:** {}\n"
+                "💀 **لیست دشمن:** {} | 💚 **لیست دوست:** {}\n"
+                "💎 **موجودی:** {} جم\n\n"
+                "👇 **برای انتخاب یک بخش دکمه را بزنید:**"
+            ).format(time_status, anti_login, copy_profile, enemy_enabled, friend_enabled, user_db.gems)
             
             buttons = [
-                [Button.inline('⏰ مدیریت ساعت/بیو', b'manage_time'),
-                 Button.inline('📝 متن و فرمت', b'manage_text')],
+                [Button.inline('⏰ ساعت و تاریخ', b'manage_time'),
+                 Button.inline('📝 فرمت و متن', b'manage_text')],
                 [Button.inline('🔒 قفل‌های رسانه', b'manage_locks'),
-                 Button.inline('⏳ وضعیت‌های خودکار', b'manage_status')],
+                 Button.inline('⏳ وضعیت خودکار', b'manage_status')],
                 [Button.inline('🌍 ترجمه خودکار', b'manage_translation')],
+                [Button.inline('🛡 محافظت و امنیت', b'security_panel'),
+                 Button.inline('🛠 ابزار و مدیریت', b'tools_panel')],
+                [Button.inline('💀 دشمن', b'enemy_panel'),
+                 Button.inline('💚 دوست', b'friend_panel'),
+                 Button.inline('💕 کراش', b'crush_panel')],
                 [Button.inline('📋 مدیریت لیست‌ها', b'manage_lists'),
                  Button.inline('💎 فروشگاه جم', b'gem_shop')],
-                [Button.inline('⚙️ تنظیمات زبان', b'lang_' + (user_db.language or 'fa'))],
-                [Button.inline('🏠 بازگشت', b'back_start')]
+                [Button.inline('⚙️ تنظیمات', b'user_settings'),
+                 Button.inline('🏠 خانه', b'back_start')]
             ]
             
             await event.edit(features, buttons=buttons)
+
+        # ============ SECURITY & PROTECTION PANEL ============
+        @bot.on(events.CallbackQuery(data=b'security_panel'))
+        async def security_panel_callback(event):
+            """🛡 محافظت و امنیت"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            anti_login = "✅ فعال" if user_db.anti_login_enabled else "❌ غیرفعال"
+            copy_profile = "✅ فعال" if user_db.copy_profile_enabled else "❌ غیرفعال"
+            
+            text = (
+                "🛡 **محافظت و امنیت:**\n\n"
+                f"🔐 **محافظت ورود:** {anti_login}\n"
+                f"👤 **کپی پروفایل:** {copy_profile}\n\n"
+                "**دستورات:**\n"
+                "`نتی لوگین روشن` - فعال‌کردن محافظت\n"
+                "`نتی لوگین خاموش` - غیرفعال‌کردن محافظت\n\n"
+                "`کپی روشن` - شروع کپی پروفایل\n"
+                "`کپی خاموش` - بازیابی پروفایل اصلی"
+            )
+            
+            buttons = [
+                [Button.inline('🔐 محافظت ورود', b'anti_login_toggle'),
+                 Button.inline('👤 کپی پروفایل', b'copy_profile_help')],
+                [Button.inline('🏠 بازگشت', b'self_panel')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+        
+        @bot.on(events.CallbackQuery(data=b'anti_login_toggle'))
+        async def anti_login_toggle_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            user_db.anti_login_enabled = not user_db.anti_login_enabled
+            user_db.save()
+            status = "✅ فعال" if user_db.anti_login_enabled else "❌ غیرفعال"
+            await event.answer(f'محافظت ورود {status}', alert=True)
+            await security_panel_callback(event)
+        
+        @bot.on(events.CallbackQuery(data=b'copy_profile_help'))
+        async def copy_profile_help(event):
+            text = (
+                "👤 **راهنمای کپی پروفایل:**\n\n"
+                "1️⃣ روی پروفایل کاربر مورد نظر بروید\n"
+                "2️⃣ دستور `کپی روشن` را ارسال کنید\n"
+                "3️⃣ انتظر تا پروفایل شما کپی شود\n"
+                "4️⃣ برای بازیابی: `کپی خاموش`\n\n"
+                "⚠️ **توجه:** نام و تصویر پروفایل کپی می‌شود"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'security_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        # ============ TOOLS & MANAGEMENT PANEL ============
+        @bot.on(events.CallbackQuery(data=b'tools_panel'))
+        async def tools_panel_callback(event):
+            """🛠 ابزار و مدیریت"""
+            text = (
+                "🛠 **ابزار و مدیریت:**\n\n"
+                "📋 **دستورات موجود:**\n"
+                "`تگ` - تگ تمام اعضای گروه\n"
+                "`تگ ادمین ها` - تگ ادمین‌های گروه\n"
+                "`شماره من` - نمایش شماره تلفن\n"
+                "`دانلود` - دانلود فایل (ریپلای)\n"
+                "`بن` - بن کاربر (ریپلای)\n"
+                "`پین` - پین پیام (ریپلای)\n"
+                "`آن پین` - آن‌پین آخرین پیام\n"
+                "`اسپم [متن] [تعداد]` - ارسال تکراری\n"
+                "`فلود [متن] [تعداد]` - فلود سریع\n"
+                "`ping` - بررسی سرعت اتصال"
+            )
+            buttons = [[Button.inline('🏠 بازگشت', b'self_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        # ============ ENEMY LIST PANEL ============
+        @bot.on(events.CallbackQuery(data=b'enemy_panel'))
+        async def enemy_panel_callback(event):
+            """💀 لیست دشمن"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            enemy_count = EnemyList.objects(user_id=user_id).count()
+            enemy_status = "✅ فعال" if user_db.enemy_list_enabled else "❌ غیرفعال"
+            
+            text = (
+                "💀 **لیست دشمن:**\n\n"
+                f"📊 **تعداد دشمن:** {enemy_count}\n"
+                f"⚔️ **وضعیت:** {enemy_status}\n\n"
+                "**دستورات:**\n"
+                "`دشمن روشن` / `دشمن خاموش` - فعال/غیرفعال\n"
+                "`تنظیم دشمن` - اضافه کردن (ریپلای)\n"
+                "`حذف دشمن` - حذف کردن (ریپلای)\n"
+                "`پاکسازی لیست دشمن` - پاک کردن همه\n"
+                "`لیست دشمن` - نمایش لیست\n"
+                "`تنظیم متن دشمن [متن]` - تنظیم پاسخ\n"
+                "`لیست متن دشمن` - نمایش پاسخ‌ها\n"
+                "`حذف متن دشمن [عدد]` - حذف پاسخ"
+            )
+            
+            buttons = [
+                [Button.inline('✅ فعال/غیرفعال', b'enemy_toggle'),
+                 Button.inline('📋 نمایش لیست', b'enemy_show_list')],
+                [Button.inline('🏠 بازگشت', b'self_panel')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+        
+        @bot.on(events.CallbackQuery(data=b'enemy_toggle'))
+        async def enemy_toggle_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            user_db.enemy_list_enabled = not user_db.enemy_list_enabled
+            user_db.save()
+            status = "✅ فعال" if user_db.enemy_list_enabled else "❌ غیرفعال"
+            await event.answer(f'وضعیت دشمن: {status}', alert=True)
+            await enemy_panel_callback(event)
+        
+        @bot.on(events.CallbackQuery(data=b'enemy_show_list'))
+        async def enemy_show_list_callback(event):
+            user_id = event.sender_id
+            enemies = EnemyList.objects(user_id=user_id).all()
+            if enemies:
+                text = "💀 **لیست دشمن‌های شما:**\n\n" + "\n".join([f"🔸 ID: `{e.target_id}`" for e in enemies])
+            else:
+                text = "❌ هیچ دشمنی در لیست نیست!"
+            buttons = [[Button.inline('🏠 بازگشت', b'enemy_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        # ============ FRIEND LIST PANEL ============
+        @bot.on(events.CallbackQuery(data=b'friend_panel'))
+        async def friend_panel_callback(event):
+            """💚 لیست دوست"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            friend_count = FriendList.objects(user_id=user_id).count()
+            friend_status = "✅ فعال" if user_db.friend_list_enabled else "❌ غیرفعال"
+            
+            text = (
+                "💚 **لیست دوست:**\n\n"
+                f"📊 **تعداد دوست:** {friend_count}\n"
+                f"🤝 **وضعیت:** {friend_status}\n\n"
+                "**دستورات:**\n"
+                "`دوست روشن` / `دوست خاموش` - فعال/غیرفعال\n"
+                "`تنظیم دوست` - اضافه کردن (ریپلای)\n"
+                "`حذف دوست` - حذف کردن (ریپلای)\n"
+                "`پاکسازی لیست دوست` - پاک کردن همه\n"
+                "`لیست دوست` - نمایش لیست\n"
+                "`تنظیم متن دوست [متن]` - تنظیم پاسخ\n"
+                "`لیست متن دوست` - نمایش پاسخ‌ها\n"
+                "`حذف متن دوست [عدد]` - حذف پاسخ"
+            )
+            
+            buttons = [
+                [Button.inline('✅ فعال/غیرفعال', b'friend_toggle'),
+                 Button.inline('📋 نمایش لیست', b'friend_show_list')],
+                [Button.inline('🏠 بازگشت', b'self_panel')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+        
+        @bot.on(events.CallbackQuery(data=b'friend_toggle'))
+        async def friend_toggle_callback(event):
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            user_db.friend_list_enabled = not user_db.friend_list_enabled
+            user_db.save()
+            status = "✅ فعال" if user_db.friend_list_enabled else "❌ غیرفعال"
+            await event.answer(f'وضعیت دوست: {status}', alert=True)
+            await friend_panel_callback(event)
+        
+        @bot.on(events.CallbackQuery(data=b'friend_show_list'))
+        async def friend_show_list_callback(event):
+            user_id = event.sender_id
+            friends = FriendList.objects(user_id=user_id).all()
+            if friends:
+                text = "💚 **لیست دوستان شما:**\n\n" + "\n".join([f"🔸 ID: `{f.target_id}`" for f in friends])
+            else:
+                text = "❌ هیچ دوستی در لیست نیست!"
+            buttons = [[Button.inline('🏠 بازگشت', b'friend_panel')]]
+            await event.edit(text, buttons=buttons)
+
+        # ============ CRUSH LIST PANEL ============
+        @bot.on(events.CallbackQuery(data=b'crush_panel'))
+        async def crush_panel_callback(event):
+            """💕 لیست کراش"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            crush_count = CrushList.objects(user_id=user_id).count()
+            
+            text = (
+                "💕 **لیست کراش:**\n\n"
+                f"📊 **تعداد کراش:** {crush_count}\n\n"
+                "**دستورات:**\n"
+                "`افزودن کراش` - اضافه کردن (ریپلای)\n"
+                "`حذف کراش` - حذف کردن (ریپلای)\n"
+                "`لیست کراش` - نمایش لیست\n"
+                "`تنظیم متن کراش [متن]` - تنظیم پیام\n"
+                "`لیست متن کراش` - نمایش پیام‌ها\n"
+                "`حذف متن کراش [عدد]` - حذف پیام"
+            )
+            
+            buttons = [
+                [Button.inline('📋 نمایش لیست', b'crush_show_list')],
+                [Button.inline('🏠 بازگشت', b'self_panel')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+        
+        @bot.on(events.CallbackQuery(data=b'crush_show_list'))
+        async def crush_show_list_callback(event):
+            user_id = event.sender_id
+            crushes = CrushList.objects(user_id=user_id).all()
+            if crushes:
+                text = "💕 **لیست کراش‌های شما:**\n\n" + "\n".join([f"🔸 ID: `{c.target_id}`" for c in crushes])
+            else:
+                text = "❌ هیچ کراشی در لیست نیست!"
+            buttons = [[Button.inline('🏠 بازگشت', b'crush_panel')]]
+            await event.edit(text, buttons=buttons)
 
         @bot.on(events.CallbackQuery(data=b'manage_time'))
         async def manage_time_callback(event):
