@@ -47,7 +47,7 @@ class Config:
     MONGODB_DB_NAME = 'Dragon_self_bot'
     API_ID = 9536480
     API_HASH = '4e52f6f12c47a0da918009260b6e3d44'
-    BOT_TOKEN = '8294693574:AAHFBuO6qlrBkAEEo0zFq0ViN26GfLuIEUU'
+    BOT_TOKEN = '8294693574:AAHuIAIcwfSM4aM-ayydK46glnNEyB292gw'
     ADMIN_USERNAME = 'meta'
     ADMIN_PASSWORD = 'Ehsan138813'
     GEM_PRICE_TOMAN = 40
@@ -883,12 +883,13 @@ class TelethonManager:
 `عضویت اجباری` - تنظیمات کانال‌ها
 `سلف فعال` - برای خود
 `پنل درج` - وب‌پنل
-
-**⚙️ میانبرها:**
-• وب‌پنل برای مدیریت
-• مشاهده آمارها
-• تایید پرداخت‌ها
 """
+                    buttons = [[
+                        Button.inline('👥 کاربران', b'admin_users'),
+                        Button.inline('📨 پیام', b'admin_msg')
+                    ], [
+                        Button.inline('❌ بستن', b'close_panel')
+                    ]]
                 else:
                     # پنل عادی کاربر
                     panel_text = f"""
@@ -906,10 +907,30 @@ class TelethonManager:
 متن: {lck('text')} | عکس: {lck('photo')} | ویدیو: {lck('video')} | گیف: {lck('gif')}
 
 **💎 جم موجود:** {user.gems}
-
-📚 دستور `راهنما` برای کمک
 """
-                await event.edit(panel_text)
+                    buttons = [[
+                        Button.inline('✏️ کشیدگی' if st('status_typing') == '✅' else '✏️ تایپ', b'toggle_typing'),
+                        Button.inline('🎮 بازی' if st('status_playing') == '✅' else '🎮 بازی', b'toggle_playing')
+                    ], [
+                        Button.inline('👁️ سین' if st('status_seen') == '✅' else '👁️ سین', b'toggle_seen'),
+                        Button.inline('🔤 بولد' if st('format_bold') == '✅' else '🔤 بولد', b'toggle_bold')
+                    ], [
+                        Button.inline('🎨 ایتالیک' if st('format_italic') == '✅' else '🎨 ایتالیک', b'toggle_italic'),
+                        Button.inline('__ زیرخط' if st('format_underline') == '✅' else '__ زیرخط', b'toggle_underline')
+                    ], [
+                        Button.inline('📏 قفل متن' if lck('text') == '✅' else '📏 قفل متن', b'toggle_lock_text'),
+                        Button.inline('🖼️ قفل عکس' if lck('photo') == '✅' else '🖼️ قفل عکس', b'toggle_lock_photo')
+                    ], [
+                        Button.inline('🎬 قفل ویدیو' if lck('video') == '✅' else '🎬 قفل ویدیو', b'toggle_lock_video'),
+                        Button.inline('🎞️ قفل گیف' if lck('gif') == '✅' else '🎞️ قفل گیف', b'toggle_lock_gif')
+                    ], [
+                        Button.inline('⏰ ساعت' if user.time_enabled else '⏰ ساعت', b'toggle_time'),
+                        Button.inline('📚 راهنما', b'help_panel')
+                    ], [
+                        Button.inline('❌ بستن', b'close_panel')
+                    ]]
+                
+                await event.edit(panel_text, buttons=buttons)
                 return
 
             if text == 'راهنما':
@@ -1648,6 +1669,223 @@ class TelethonManager:
             # ✅ دوست - بدون پاسخ (فقط نشان‌دادن لیست)
             friend = FriendList.objects(user_id=user.id, target_id=sender_id).first()
             # دوستان نیازی به پاسخ خودکار ندارند
+
+        # ============ CALLBACK HANDLERS FOR PANEL BUTTONS ============
+        @client.on(events.CallbackQuery())
+        async def handle_panel_buttons(event):
+            user = User.objects(telegram_id=user_id).first()
+            if not user:
+                await event.answer("خطا: کاربر یافت نشد", alert=True)
+                return
+            
+            data = event.data.decode('utf-8')
+            
+            # Close panel
+            if data == 'close_panel':
+                await event.delete()
+                return
+            
+            # Status Actions Toggles
+            if data == 'toggle_typing':
+                user.self_settings['status_typing'] = not user.self_settings.get('status_typing', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['status_typing'] else '❌ غیرفعال'
+                await event.answer(f"حالت تایپ {state} شد")
+            
+            elif data == 'toggle_playing':
+                user.self_settings['status_playing'] = not user.self_settings.get('status_playing', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['status_playing'] else '❌ غیرفعال'
+                await event.answer(f"حالت بازی {state} شد")
+            
+            elif data == 'toggle_seen':
+                user.self_settings['status_seen'] = not user.self_settings.get('status_seen', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['status_seen'] else '❌ غیرفعال'
+                await event.answer(f"سین خودکار {state} شد")
+            
+            # Text Formatting Toggles
+            elif data == 'toggle_bold':
+                user.self_settings['format_bold'] = not user.self_settings.get('format_bold', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['format_bold'] else '❌ غیرفعال'
+                await event.answer(f"قالب بولد {state} شد")
+            
+            elif data == 'toggle_italic':
+                user.self_settings['format_italic'] = not user.self_settings.get('format_italic', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['format_italic'] else '❌ غیرفعال'
+                await event.answer(f"قالب ایتالیک {state} شد")
+            
+            elif data == 'toggle_underline':
+                user.self_settings['format_underline'] = not user.self_settings.get('format_underline', False)
+                user.save()
+                state = '✅ فعال' if user.self_settings['format_underline'] else '❌ غیرفعال'
+                await event.answer(f"قالب زیرخط {state} شد")
+            
+            # Media Locks
+            elif data == 'toggle_lock_text':
+                lock = UserMediaLock.objects(user_id=user.id, media_type='text').first()
+                if not lock:
+                    lock = UserMediaLock(user_id=user.id, media_type='text')
+                lock.is_enabled = not lock.is_enabled
+                lock.save()
+                state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
+                await event.answer(f"قفل متن {state} شد")
+            
+            elif data == 'toggle_lock_photo':
+                lock = UserMediaLock.objects(user_id=user.id, media_type='photo').first()
+                if not lock:
+                    lock = UserMediaLock(user_id=user.id, media_type='photo')
+                lock.is_enabled = not lock.is_enabled
+                lock.save()
+                state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
+                await event.answer(f"قفل عکس {state} شد")
+            
+            elif data == 'toggle_lock_video':
+                lock = UserMediaLock.objects(user_id=user.id, media_type='video').first()
+                if not lock:
+                    lock = UserMediaLock(user_id=user.id, media_type='video')
+                lock.is_enabled = not lock.is_enabled
+                lock.save()
+                state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
+                await event.answer(f"قفل ویدیو {state} شد")
+            
+            elif data == 'toggle_lock_gif':
+                lock = UserMediaLock.objects(user_id=user.id, media_type='gif').first()
+                if not lock:
+                    lock = UserMediaLock(user_id=user.id, media_type='gif')
+                lock.is_enabled = not lock.is_enabled
+                lock.save()
+                state = '✅ فعال' if lock.is_enabled else '❌ غیرفعال'
+                await event.answer(f"قفل گیف {state} شد")
+            
+            # Time Toggle
+            elif data == 'toggle_time':
+                user.time_enabled = not user.time_enabled
+                user.save()
+                state = '✅ فعال' if user.time_enabled else '❌ غیرفعال'
+                await event.answer(f"ساعت در نام {state} شد")
+            
+            # Help Panel
+            elif data == 'help_panel':
+                help_text = """
+╔════════════════════════════╗
+║       📚 راهنمای جامع      ║
+╚════════════════════════════╝
+
+**🔸 اکشن‌ها:**
+✏️ تایپ ➜ نمایش درحال تایپ
+🎮 بازی ➜ نمایش درحال بازی
+👁️ سین ➜ خواندن خودکار
+
+**🔸 متن و قالب:**
+🔤 بولد ➜ ضخیم کردن متن
+🎨 ایتالیک ➜ کج کردن متن
+__ زیرخط ➜ خط زیر متن
+
+**🔸 قفل‌های پیوی:**
+📏 متن ➜ حذف متن‌های دریافتی
+🖼️ عکس ➜ حذف عکس‌های دریافتی
+🎬 ویدیو ➜ حذف ویدیو‌های دریافتی
+🎞️ گیف ➜ حذف انیمیشن‌های دریافتی
+
+**🔸 سایر:**
+⏰ ساعت ➜ نمایش ساعت در نام
+"""
+                help_buttons = [[Button.inline('بازگشت', b'back_panel')]]
+                await event.edit(help_text, buttons=help_buttons)
+                await event.answer()
+                return
+            
+            # Back to Panel
+            elif data == 'back_panel':
+                active_locks = UserMediaLock.objects(user_id=user.id, is_enabled=True).all()
+                locked_types = [lock.media_type for lock in active_locks]
+                def lck(t): return '✅' if t in locked_types else '❌'
+                def st(k): return '✅' if user.self_settings.get(k) else '❌'
+                
+                panel_text = f"""
+╔════════════════════════════════════════════╗
+║    🎛 پنل سلف بات - وضعیت فعلی            ║
+╚════════════════════════════════════════════╝
+
+**🔸 وضعیت اکشن‌ها:**
+تایپ: {st('status_typing')} | بازی: {st('status_playing')} | سین: {st('status_seen')}
+
+**🔹 قالب‌بندی متن:**
+بولد: {st('format_bold')} | ایتالیک: {st('format_italic')} | زیرخط: {st('format_underline')}
+
+**🔸 قفل‌های پیوی:**
+متن: {lck('text')} | عکس: {lck('photo')} | ویدیو: {lck('video')} | گیف: {lck('gif')}
+
+**💎 جم موجود:** {user.gems}
+"""
+                buttons = [[
+                    Button.inline('✏️ کشیدگی' if st('status_typing') == '✅' else '✏️ تایپ', b'toggle_typing'),
+                    Button.inline('🎮 بازی' if st('status_playing') == '✅' else '🎮 بازی', b'toggle_playing')
+                ], [
+                    Button.inline('👁️ سین' if st('status_seen') == '✅' else '👁️ سین', b'toggle_seen'),
+                    Button.inline('🔤 بولد' if st('format_bold') == '✅' else '🔤 بولد', b'toggle_bold')
+                ], [
+                    Button.inline('🎨 ایتالیک' if st('format_italic') == '✅' else '🎨 ایتالیک', b'toggle_italic'),
+                    Button.inline('__ زیرخط' if st('format_underline') == '✅' else '__ زیرخط', b'toggle_underline')
+                ], [
+                    Button.inline('📏 قفل متن' if lck('text') == '✅' else '📏 قفل متن', b'toggle_lock_text'),
+                    Button.inline('🖼️ قفل عکس' if lck('photo') == '✅' else '🖼️ قفل عکس', b'toggle_lock_photo')
+                ], [
+                    Button.inline('🎬 قفل ویدیو' if lck('video') == '✅' else '🎬 قفل ویدیو', b'toggle_lock_video'),
+                    Button.inline('🎞️ قفل گیف' if lck('gif') == '✅' else '🎞️ قفل گیف', b'toggle_lock_gif')
+                ], [
+                    Button.inline('⏰ ساعت' if user.time_enabled else '⏰ ساعت', b'toggle_time'),
+                    Button.inline('📚 راهنما', b'help_panel')
+                ], [
+                    Button.inline('❌ بستن', b'close_panel')
+                ]]
+                await event.edit(panel_text, buttons=buttons)
+                await event.answer()
+                return
+            
+            # Admin buttons
+            elif data == 'admin_users':
+                users_list = User.objects.limit(5)
+                users_text = "👥 **کاربران فعال:**\n" + "\n".join([f"• {u.username or u.first_name} (ID: {u.telegram_id})" for u in users_list])
+                admin_buttons = [[Button.inline('بازگشت', b'back_admin')]]
+                await event.edit(users_text, buttons=admin_buttons)
+                await event.answer()
+                return
+            
+            elif data == 'admin_msg':
+                msg_text = "📨 برای ارسال پیام همگانی، از دستور `پیام همگانی [متن]` استفاده کنید"
+                admin_buttons = [[Button.inline('بازگشت', b'back_admin')]]
+                await event.edit(msg_text, buttons=admin_buttons)
+                await event.answer()
+                return
+            
+            elif data == 'back_admin':
+                admin_db = Admin.objects.first()
+                is_admin_user = admin_db and admin_db.telegram_id == user_id
+                
+                if is_admin_user:
+                    panel_text = """
+╔══════════════════════════════════════════╗
+║        👑 پنل ادمین - Dragon SELF BOT    ║
+╚══════════════════════════════════════════╝
+
+**🎛️ وضعیت ادمین:**
+• جم: نامحدود ♾️
+• دسترسی: مدیریت کامل ✅
+• وب‌پنل: فعال ✅
+"""
+                    buttons = [[
+                        Button.inline('👥 کاربران', b'admin_users'),
+                        Button.inline('📨 پیام', b'admin_msg')
+                    ], [
+                        Button.inline('❌ بستن', b'close_panel')
+                    ]]
+                    await event.edit(panel_text, buttons=buttons)
+            
+            await event.answer()
 
         # ---------------- 2. Incoming PV Interceptor (Locks & Auto-Seen) ----------------
         @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
