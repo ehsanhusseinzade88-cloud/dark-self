@@ -13,4 +13,4 @@ google-cloud-translate
 python-telegram-bot
 pycryptodome
 certifi
-PIL
+Pillow
