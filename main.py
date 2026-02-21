@@ -59,6 +59,13 @@ class Config:
     MAX_AUTO_ACTIONS = 10
     BOT_NAME = 'Dragon SELF BOT'
     BOT_VERSION = '2.0.0'
+    # Currency conversion
+    USD_TO_TOMAN = 163000
+    # Game settings
+    GAME_DEFAULT_BETS = [100, 200, 400, 600]
+    GAME_COMMISSION_PERCENT = 2
+    # Monthly gems calculation: 2 gems/hour × 24 hours × 30 days = 1440 gems/month
+    MONTHLY_GEMS_NEEDED = 24 * 30 * GEMS_PER_HOUR
 
 # ============ UTILITIES ============
 IRAN_TZ = pytz.timezone('Asia/Tehran')
@@ -112,6 +119,308 @@ STATUS_ACTIONS = {
     'uploading_photo': '📸 عکس',
     'uploading_video': '🎬 گیف',
 }
+
+# ============ MULTI-LANGUAGE SYSTEM ============
+LANGUAGES = {
+    'fa': '🇮🇷 فارسی',
+    'en': '🇬🇧 English',
+    'ru': '🇷🇺 Русский',
+    'ar': '🇸🇦 العربية',
+    'de': '🇩🇪 Deutsch'
+}
+
+TRANSLATIONS = {
+    'fa': {
+        'welcome': '👋 سلام {name}! به Dragon Self Bot خوش آمدید.',
+        'select_language': '🗣️ لطفاً زبان خود را انتخاب کنید:',
+        'enemy_list': '👿 لیست دشمن',
+        'add_enemy': '➕ اضافه کردن دشمن',
+        'remove_enemy': '➖ حذف دشمن',
+        'crush_list': '💕 لیست کراش',
+        'add_crush': '➕ اضافه کردن کراش',
+        'remove_crush': '➖ حذف کراش',
+        'friend_list': '👥 لیست دوستان',
+        'add_friend': '➕ اضافه کردن دوست',
+        'remove_friend': '➖ حذف دوست',
+        'enter_user_id': '🆔 ایدی کاربر را وارد کنید:',
+        'enter_message_text': '📝 متن پیام را وارد کنید:',
+        'enter_crush_message': '💕 متن کراش را وارد کنید:',
+        'added_successfully': '✅ با موفقیت اضافه شد!',
+        'removed_successfully': '✅ با موفقیت حذف شد!',
+        'enabled': '✅ فعال',
+        'disabled': '❌ غیرفعال',
+        'settings': '⚙️ تنظیمات',
+        'language_settings': '🗣️ تنظیمات زبان',
+        'manage_lists': '📋 مدیریت لیست‌ها',
+        'translations': '🌐 ترجمه‌ها',
+        'home': '🏠 خانه',
+        'back': '⬅️ برگشت',
+        'gem_shop': '💎 فروشگاه جم',
+        'buy_gems': '💳 خرید جم',
+        'wallet': '💰 کیف پول',
+        'game': '🎮 بازی',
+        'play_game': '🎯 شرط بندی',
+        'preset_bet_100': '🎲 شرط 100 جم',
+        'preset_bet_200': '🎲 شرط 200 جم',
+        'preset_bet_400': '🎲 شرط 400 جم',
+        'preset_bet_600': '🎲 شرط 600 جم',
+        'custom_bet': '🎲 شرط شخصی',
+        'winner': '🏆 برنده:',
+        'loser': '💔 بازنده:',
+        'gems_won': '💎 جم برده شده:',
+        'gems_lost': '💎 جم باخته شده:',
+        'game_cancelled': '❌ بازی لغو شد',
+        'enter_bet_amount': '💎 مقدار شرط را وارد کنید:',
+        'time_name': '⏰ ساعت در نام',
+        'time_bio': '⏰ ساعت در بیو',
+        'date_bio': '📅 تاریخ در بیو',
+        'change_font': '🔤 تغییر فونت',
+        'enemy_message_text': '📝 متن های دشمن را وارد کنید (با , جدا کنید):',
+        'crush_message_text': '💕 متن های کراش را وارد کنید (با , جدا کنید):',
+        'usd_to_toman': 'دلار به تومان: 1 USD = 163,000 تومان',
+        'monthly_gems_needed': '📊 جمهای مورد نیاز ماهانه (2 جم/ساعت):',
+        'gems_per_hour_loss': '⏸️ هر ساعت 2 جم کم می‌شود',
+        'total_monthly': '📈 ماهانه: {total} جم',
+    },
+    'en': {
+        'welcome': '👋 Hello {name}! Welcome to Dragon Self Bot.',
+        'select_language': '🗣️ Please select your language:',
+        'enemy_list': '👿 Enemy List',
+        'add_enemy': '➕ Add Enemy',
+        'remove_enemy': '➖ Remove Enemy',
+        'crush_list': '💕 Crush List',
+        'add_crush': '➕ Add Crush',
+        'remove_crush': '➖ Remove Crush',
+        'friend_list': '👥 Friend List',
+        'add_friend': '➕ Add Friend',
+        'remove_friend': '➖ Remove Friend',
+        'enter_user_id': '🆔 Enter user ID:',
+        'enter_message_text': '📝 Enter message text:',
+        'enter_crush_message': '💕 Enter crush message:',
+        'added_successfully': '✅ Added successfully!',
+        'removed_successfully': '✅ Removed successfully!',
+        'enabled': '✅ Enabled',
+        'disabled': '❌ Disabled',
+        'settings': '⚙️ Settings',
+        'language_settings': '🗣️ Language Settings',
+        'manage_lists': '📋 Manage Lists',
+        'translations': '🌐 Translations',
+        'home': '🏠 Home',
+        'back': '⬅️ Back',
+        'gem_shop': '💎 Gem Shop',
+        'buy_gems': '💳 Buy Gems',
+        'wallet': '💰 Wallet',
+        'game': '🎮 Game',
+        'play_game': '🎯 Play Game',
+        'preset_bet_100': '🎲 Bet 100 Gems',
+        'preset_bet_200': '🎲 Bet 200 Gems',
+        'preset_bet_400': '🎲 Bet 400 Gems',
+        'preset_bet_600': '🎲 Bet 600 Gems',
+        'custom_bet': '🎲 Custom Bet',
+        'winner': '🏆 Winner:',
+        'loser': '💔 Loser:',
+        'gems_won': '💎 Gems Won:',
+        'gems_lost': '💎 Gems Lost:',
+        'game_cancelled': '❌ Game Cancelled',
+        'enter_bet_amount': '💎 Enter bet amount:',
+        'time_name': '⏰ Show Time in Name',
+        'time_bio': '⏰ Show Time in Bio',
+        'date_bio': '📅 Show Date in Bio',
+        'change_font': '🔤 Change Font',
+        'enemy_message_text': '📝 Enter enemy messages (separated by comma):',
+        'crush_message_text': '💕 Enter crush messages (separated by comma):',
+        'usd_to_toman': 'USD to Toman: 1 USD = 163,000 Toman',
+        'monthly_gems_needed': '📊 Monthly gems needed (2 gems/hour):',
+        'gems_per_hour_loss': '⏸️ Loses 2 gems per hour',
+        'total_monthly': '📈 Monthly: {total} gems',
+    },
+    'ru': {
+        'welcome': '👋 Привет {name}! Добро пожаловать в Dragon Self Bot.',
+        'select_language': '🗣️ Пожалуйста, выберите язык:',
+        'enemy_list': '👿 Список врагов',
+        'add_enemy': '➕ Добавить врага',
+        'remove_enemy': '➖ Удалить врага',
+        'crush_list': '💕 Список крашей',
+        'add_crush': '➕ Добавить краш',
+        'remove_crush': '➖ Удалить краш',
+        'friend_list': '👥 Список друзей',
+        'add_friend': '➕ Добавить друга',
+        'remove_friend': '➖ Удалить друга',
+        'enter_user_id': '🆔 Введите ID пользователя:',
+        'enter_message_text': '📝 Введите текст сообщения:',
+        'enter_crush_message': '💕 Введите сообщение краша:',
+        'added_successfully': '✅ Успешно добавлено!',
+        'removed_successfully': '✅ Успешно удалено!',
+        'enabled': '✅ Включено',
+        'disabled': '❌ Отключено',
+        'settings': '⚙️ Параметры',
+        'language_settings': '🗣️ Параметры языка',
+        'manage_lists': '📋 Управление списками',
+        'translations': '🌐 Переводы',
+        'home': '🏠 Главная',
+        'back': '⬅️ Назад',
+        'gem_shop': '💎 Магазин драгоценностей',
+        'buy_gems': '💳 Купить драгоценности',
+        'wallet': '💰 Кошелек',
+        'game': '🎮 Игра',
+        'play_game': '🎯 Играть',
+        'preset_bet_100': '🎲 Ставка 100 драгоценностей',
+        'preset_bet_200': '🎲 Ставка 200 драгоценностей',
+        'preset_bet_400': '🎲 Ставка 400 драгоценностей',
+        'preset_bet_600': '🎲 Ставка 600 драгоценностей',
+        'custom_bet': '🎲 Пользовательская ставка',
+        'winner': '🏆 Победитель:',
+        'loser': '💔 Проигравший:',
+        'gems_won': '💎 Выигранные драгоценности:',
+        'gems_lost': '💎 Потерянные драгоценности:',
+        'game_cancelled': '❌ Игра отменена',
+        'enter_bet_amount': '💎 Введите размер ставки:',
+        'time_name': '⏰ Показывать время в имени',
+        'time_bio': '⏰ Показывать время в биографии',
+        'date_bio': '📅 Показывать дату в биографии',
+        'change_font': '🔤 Изменить шрифт',
+        'enemy_message_text': '📝 Введите сообщения врагов (разделены запятой):',
+        'crush_message_text': '💕 Введите сообщения крашей (разделены запятой):',
+        'usd_to_toman': 'Доллар в иранский риал: 1 USD = 163,000 иранских риалов',
+        'monthly_gems_needed': '📊 Ежемесячно необходимо драгоценностей (2 драгоценности/час):',
+        'gems_per_hour_loss': '⏸️ Теряет 2 драгоценности в час',
+        'total_monthly': '📈 Ежемесячно: {total} драгоценностей',
+        'home': '🏠 Главная',
+        'back': '⬅️ Назад'
+    },
+    'ar': {
+        'welcome': '👋 مرحباً {name}! أهلاً وسهلاً في Dragon Self Bot.',
+        'select_language': '🗣️ يرجى تحديد لغتك:',
+        'enemy_list': '👿 قائمة الأعداء',
+        'add_enemy': '➕ إضافة عدو',
+        'remove_enemy': '➖ إزالة عدو',
+        'crush_list': '💕 قائمة الأحلام',
+        'add_crush': '➕ إضافة إلى القائمة',
+        'remove_crush': '➖ إزالة من القائمة',
+        'friend_list': '👥 قائمة الأصدقاء',
+        'add_friend': '➕ إضافة صديق',
+        'remove_friend': '➖ إزالة صديق',
+        'enter_user_id': '🆔 أدخل معرف المستخدم:',
+        'enter_message_text': '📝 أدخل نص الرسالة:',
+        'enter_crush_message': '💕 أدخل رسالة الحلم:',
+        'added_successfully': '✅ تمت الإضافة بنجاح!',
+        'removed_successfully': '✅ تم الحذف بنجاح!',
+        'enabled': '✅ مفعل',
+        'disabled': '❌ معطل',
+        'settings': '⚙️ الإعدادات',
+        'language_settings': '🗣️ إعدادات اللغة',
+        'manage_lists': '📋 إدارة القوائم',
+        'translations': '🌐 الترجمات',
+        'home': '🏠 الرئيسية',
+        'back': '⬅️ رجوع',
+        'gem_shop': '💎 متجر الجواهر',
+        'buy_gems': '💳 شراء جواهر',
+        'wallet': '💰 المحفظة',
+        'game': '🎮 لعبة',
+        'play_game': '🎯 العب اللعبة',
+        'preset_bet_100': '🎲 رهان 100 جوهرة',
+        'preset_bet_200': '🎲 رهان 200 جوهرة',
+        'preset_bet_400': '🎲 رهان 400 جوهرة',
+        'preset_bet_600': '🎲 رهان 600 جوهرة',
+        'custom_bet': '🎲 رهان مخصص',
+        'winner': '🏆 الفائز:',
+        'loser': '💔 الخاسر:',
+        'gems_won': '💎 الجواهر الفائزة:',
+        'gems_lost': '💎 الجواهر المفقودة:',
+        'game_cancelled': '❌ تم إلغاء اللعبة',
+        'enter_bet_amount': '💎 أدخل مبلغ الرهان:',
+        'time_name': '⏰ عرض الوقت في الاسم',
+        'time_bio': '⏰ عرض الوقت في السيرة',
+        'date_bio': '📅 عرض التاريخ في السيرة',
+        'change_font': '🔤 تغيير الخط',
+        'enemy_message_text': '📝 أدخل رسائل الأعداء (مفصولة بفاصلة):',
+        'crush_message_text': '💕 أدخل رسائل الأحلام (مفصولة بفاصلة):',
+        'usd_to_toman': 'دولار بالريال الإيراني: 1 دولار = 163000 ريال إيراني',
+        'monthly_gems_needed': '📊 الجواهر المطلوبة شهرياً (2 جوهرة/ساعة):',
+        'gems_per_hour_loss': '⏸️ يفقد 2 جوهرة في الساعة',
+        'total_monthly': '📈 شهري: {total} جوهرة',
+    },
+    'de': {
+        'welcome': '👋 Hallo {name}! Willkommen bei Dragon Self Bot.',
+        'select_language': '🗣️ Bitte wählen Sie Ihre Sprache:',
+        'enemy_list': '👿 Feindeslist',
+        'add_enemy': '➕ Feind hinzufügen',
+        'remove_enemy': '➖ Feind entfernen',
+        'crush_list': '💕 Crush-Liste',
+        'add_crush': '➕ Crush hinzufügen',
+        'remove_crush': '➖ Crush entfernen',
+        'friend_list': '👥 Freundesliste',
+        'add_friend': '➕ Freund hinzufügen',
+        'remove_friend': '➖ Freund entfernen',
+        'enter_user_id': '🆔 Benutzer-ID eingeben:',
+        'enter_message_text': '📝 Nachrichtentext eingeben:',
+        'enter_crush_message': '💕 Crush-Nachricht eingeben:',
+        'added_successfully': '✅ Erfolgreich hinzugefügt!',
+        'removed_successfully': '✅ Erfolgreich entfernt!',
+        'enabled': '✅ Aktiviert',
+        'disabled': '❌ Deaktiviert',
+        'settings': '⚙️ Einstellungen',
+        'language_settings': '🗣️ Spracheinstellungen',
+        'manage_lists': '📋 Listen verwalten',
+        'translations': '🌐 Übersetzungen',
+        'home': '🏠 Startseite',
+        'back': '⬅️ Zurück',
+        'gem_shop': '💎 Edelstein-Shop',
+        'buy_gems': '💳 Edelsteine kaufen',
+        'wallet': '💰 Geldbörse',
+        'game': '🎮 Spiel',
+        'play_game': '🎯 Spielen',
+        'preset_bet_100': '🎲 Einsatz 100 Edelsteine',
+        'preset_bet_200': '🎲 Einsatz 200 Edelsteine',
+        'preset_bet_400': '🎲 Einsatz 400 Edelsteine',
+        'preset_bet_600': '🎲 Einsatz 600 Edelsteine',
+        'custom_bet': '🎲 Benutzerdefinierter Einsatz',
+        'winner': '🏆 Gewinner:',
+        'loser': '💔 Verlierer:',
+        'gems_won': '💎 Edelsteine gewonnen:',
+        'gems_lost': '💎 Edelsteine verloren:',
+        'game_cancelled': '❌ Spiel abgebrochen',
+        'enter_bet_amount': '💎 Einsatzbetrag eingeben:',
+        'time_name': '⏰ Uhrzeit im Namen anzeigen',
+        'time_bio': '⏰ Uhrzeit in Bio anzeigen',
+        'date_bio': '📅 Datum in Bio anzeigen',
+        'change_font': '🔤 Schriftart ändern',
+        'enemy_message_text': '📝 Feinschaftsnachrichten eingeben (durch Komma getrennt):',
+        'crush_message_text': '💕 Crush-Nachrichten eingeben (durch Komma getrennt):',
+        'usd_to_toman': 'Dollar zu iranischem Rial: 1 USD = 163.000 iranische Rial',
+        'monthly_gems_needed': '📊 Monatlich erforderliche Edelsteine (2 Edelsteine/Stunde):',
+        'gems_per_hour_loss': '⏸️ Verliert 2 Edelsteine pro Stunde',
+        'total_monthly': '📈 Monatlich: {total} Edelsteine',
+    }
+}
+
+def get_text(user_language, key):
+    """سازگار شدن متن‌ها با زبان کاربر"""
+    lang = user_language if user_language in TRANSLATIONS else 'fa'
+    return TRANSLATIONS[lang].get(key, TRANSLATIONS['fa'].get(key, key))
+
+# ============ PERFORMANCE OPTIMIZATION - USER CACHE ============
+# Reduces database queries for frequently accessed user data
+_user_cache = {}
+_cache_timeout = 300  # 5 minutes
+
+def get_cached_user(user_id):
+    """Get user from cache or database with TTL"""
+    import time
+    if user_id in _user_cache:
+        cached_data, timestamp = _user_cache[user_id]
+        if time.time() - timestamp < _cache_timeout:
+            return cached_data
+    # Fetch from DB and cache
+    user = User.objects(telegram_id=user_id).first()
+    if user:
+        _user_cache[user_id] = (user, __import__('time').time())
+    return user
+
+def invalidate_user_cache(user_id):
+    """Clear user cache when data changes"""
+    if user_id in _user_cache:
+        del _user_cache[user_id]
 
 def get_iran_now():
     return datetime.now(IRAN_TZ)
@@ -244,6 +553,11 @@ class User(Document):
     pv_lock_enabled = BooleanField(default=False)
     copy_profile_enabled = BooleanField(default=False)
     forward_messages = DictField(default={})
+    language = StringField(default='fa')  # ✅ fa (فارسی) یا en (انگلیسی) - پیش‌فرض فارسی
+    language_selected = BooleanField(default=False)  # ✅ Track if user selected language on first run
+    enemy_messages = ListField(StringField(), default=[])  # ✅ Customizable enemy messages (comma-separated)
+    crush_messages = ListField(StringField(), default=[])  # ✅ Customizable crush messages
+    friend_messages = ListField(StringField(), default=[])  # ✅ Customizable friend messages
     created_at = DateTimeField(default=datetime.utcnow)
     last_active = DateTimeField(default=datetime.utcnow)
     updated_at = DateTimeField(default=datetime.utcnow)
@@ -355,6 +669,7 @@ class EnemyList(Document):
     target_username = StringField()
     is_enabled = BooleanField(default=True)
     responses = DictField(default={})
+    custom_messages = ListField(StringField(), default=[])  # ✅ Custom semicolon-separated messages
     created_at = DateTimeField(default=datetime.utcnow)
 
 class FriendList(Document):
@@ -364,6 +679,7 @@ class FriendList(Document):
     target_username = StringField()
     is_enabled = BooleanField(default=True)
     responses = DictField(default={})
+    custom_messages = ListField(StringField(), default=[])  # ✅ Custom messages for friends
     created_at = DateTimeField(default=datetime.utcnow)
 
 class CrushList(Document):
@@ -373,6 +689,7 @@ class CrushList(Document):
     target_username = StringField()
     is_enabled = BooleanField(default=True)
     messages = DictField(default={})
+    custom_messages = ListField(StringField(), default=[])  # ✅ Custom crush messages
     created_at = DateTimeField(default=datetime.utcnow)
 
 class SubscriptionChannel(Document):
@@ -751,13 +1068,14 @@ class TelethonManager:
                 if action == 'add':
                     existing = model_class.objects(user_id=user.id, target_id=target_id).first()
                     if not existing:
-                        model_class(user_id=user.id, target_id=target_id).save()
+                        new_entry = model_class(user_id=user.id, target_id=target_id)
+                        new_entry.save()
                     await event.edit(f"✅ کاربر به لیست {list_type} اضافه شد.")
                 elif action == 'remove':
                     model_class.objects(user_id=user.id, target_id=target_id).delete()
                     await event.edit(f"✅ کاربر از لیست {list_type} حذف شد.")
 
-            # Enemy Commands
+            # Enemy Commands with Custom Messages
             if text == 'تنظیم دشمن' or text == 'افزودن دشمن':
                 await manage_list_target(event, text, 'add', 'دشمن', EnemyList)
                 return
@@ -772,6 +1090,15 @@ class TelethonManager:
                 enemies = EnemyList.objects(user_id=user.id).all()
                 msg = "📜 **لیست دشمنان:**\n" + "\n".join([f"🔸 `{e.target_id}`" for e in enemies])
                 await event.edit(msg if enemies else "لیست دشمن خالی است.")
+                return
+            # Add enemy messages (comma-separated)
+            if text.startswith('متن دشمن '):
+                msg_text = text.replace('متن دشمن ', '').strip()
+                # Split by comma for multiple messages
+                messages = [m.strip() for m in msg_text.split(',') if m.strip()]
+                user.enemy_messages = messages
+                user.save()
+                await event.edit(f"✅ {len(messages)} متن دشمن اضافه شد.\n📝 متن‌ها:\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(messages)]))
                 return
 
             # Friend Commands
@@ -807,46 +1134,80 @@ class TelethonManager:
                 msg = "📜 **لیست کراش‌ها:**\n" + "\n".join([f"🔸 `{c.target_id}`" for c in crushes])
                 await event.edit(msg if crushes else "لیست کراش خالی است.")
                 return
+            # Add crush messages (comma-separated)
+            if text.startswith('متن کراش '):
+                msg_text = text.replace('متن کراش ', '').strip()
+                messages = [m.strip() for m in msg_text.split(',') if m.strip()]
+                user.crush_messages = messages
+                user.save()
+                await event.edit(f"✅ {len(messages)} متن کراش اضافه شد.\n💕 متن‌ها:\n" + "\n".join([f"{i+1}. {m}" for i, m in enumerate(messages)]))
+                return
 
-            # Texts Management
-            def manage_list_texts(text, list_type, settings_key):
-                if settings_key not in user.self_settings:
-                    user.self_settings[settings_key] = []
-                
-                if text.startswith(f'تنظیم متن {list_type} '):
-                    new_msg = text.replace(f'تنظیم متن {list_type} ', '').strip()
-                    user.self_settings[settings_key].append(new_msg)
-                    user.save()
-                    return f"✅ متن به لیست پاسخ‌های {list_type} اضافه شد."
-                
-                elif text == f'لیست متن {list_type}':
-                    texts = user.self_settings[settings_key]
-                    if not texts: return f"لیست متن {list_type} خالی است."
-                    return f"📜 **متن‌های {list_type}:**\n" + "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
-                
-                elif text.startswith(f'حذف متن {list_type} '):
-                    try:
-                        idx = int(text.split()[-1]) - 1
-                        if 0 <= idx < len(user.self_settings[settings_key]):
-                            removed = user.self_settings[settings_key].pop(idx)
-                            user.save()
-                            return f"✅ متن زیر حذف شد:\n{removed}"
-                        else:
-                            return "❌ شماره نامعتبر است."
-                    except:
-                        return "❌ فرمت دستور اشتباه است."
-                return None
+            # Gem Shop
+            if text == 'فروشگاه جم' or text == 'محاسبه جم':
+                monthly_need = 24 * 30 * Config.GEMS_PER_HOUR  # 2 gems/hour * 24 * 30 = 1440
+                usd_needed = (Config.GEM_PRICE_TOMAN * monthly_need) / Config.USD_TO_TOMAN
+                shop_msg = f"""💎 **فروشگاه جم**
 
-            for l_type, s_key in [('دشمن', 'enemy_texts'), ('دوست', 'friend_texts'), ('کراش', 'crush_texts')]:
-                if text.startswith(f'تنظیم متن {l_type}') or text.startswith(f'لیست متن {l_type}') or text.startswith(f'حذف متن {l_type}'):
-                    res = manage_list_texts(text, l_type, s_key)
-                    if res:
-                        await event.edit(res)
-                        return
+📊 اطلاعات موردنیاز:
+• هر ساعت: {Config.GEMS_PER_HOUR} جم کم می‌شود
+• ماهانه: {monthly_need} جم نیاز است
+• هزینه: {monthly_need * Config.GEM_PRICE_TOMAN:,.0f} تومان = {usd_needed:.2f} USD
 
-            # Fun Animations
-            fun_commands = ['قلب', 'heart', 'فان love', 'fun love', 'فان oclock', 'fun oclock', 'فان star', 'فان snow']
-            if text in fun_commands:
+💳 نرخ تبدیل: 1 USD = {Config.USD_TO_TOMAN:,} تومان
+"""
+                await event.edit(shop_msg)
+                return
+
+            # Game commands
+            if text in ['بازی', 'play', 'game']:
+                game_msg = """🎮 **بازی شرط بندی**
+
+بازی را با یکی از دستورات زیر شروع کنید:
+
+🎲 شرط‌های تعریف شده:
+`شرط 100` - شرط 100 جم
+`شرط 200` - شرط 200 جم
+`شرط 400` - شرط 400 جم
+`شرط 600` - شرط 600 جم
+
+🎯 شرط شخصی:
+`شرط [عدد]` - شرط با تعداد دلخواه جم
+
+نتیجه: برنده تصادفی انتخاب می‌شود!
+"""
+                await event.edit(game_msg)
+                return
+
+            # Bet commands for group
+            if text.startswith('شرط ') and event.is_group:
+                bet_text = text.replace('شرط ', '').strip()
+                if bet_text.isdigit():
+                    amount = int(bet_text)
+                    if amount > 0 and user.gems >= amount:
+                        bet_id = f"{event.chat_id}_{datetime.utcnow().timestamp()}"
+                        new_bet = Bet(
+                            bet_id=bet_id,
+                            group_id=event.chat_id,
+                            creator_id=user.id,
+                            creator_name=user.username or user.first_name,
+                            amount=amount,
+                            status='waiting'
+                        )
+                        new_bet.save()
+                        
+                        # Create game message with buttons
+                        game_msg = f"""🎮 **بازی شرط بندی**
+
+💎 شرط: {amount} جم
+👤 ایجاد کننده: @{user.username or user.first_name}
+
+برای شرکت در بازی بر روی دکمه زیر کلیک کنید!
+"""
+                        await event.edit(game_msg)
+                    else:
+                        await event.edit(f"❌ جم کافی ندارید! شما {user.gems} جم دارید.")
+                return
                 if 'قلب' in text or 'heart' in text:
                     hearts = ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "❤️"]
                     for h in hearts:
@@ -959,26 +1320,33 @@ class TelethonManager:
             sender_id = event.sender_id
             import random
             
-            # Enemy logic
-            if user.self_settings.get('enemy_enabled'):
-                if EnemyList.objects(user_id=user.id, target_id=sender_id).first():
-                    texts = user.self_settings.get('enemy_texts', [])
-                    if texts:
-                        await event.reply(random.choice(texts))
-                        
-            # Friend logic
-            if user.self_settings.get('friend_enabled'):
-                if FriendList.objects(user_id=user.id, target_id=sender_id).first():
-                    texts = user.self_settings.get('friend_texts', [])
-                    if texts:
-                        await event.reply(random.choice(texts))
-
-            # Crush logic
-            if user.self_settings.get('crush_enabled'):
-                if CrushList.objects(user_id=user.id, target_id=sender_id).first():
-                    texts = user.self_settings.get('crush_texts', [])
-                    if texts:
-                        await event.reply(random.choice(texts))
+            # ✅ دشمن - پاسخ خودکار با متن‌های custom
+            enemy = EnemyList.objects(user_id=user.id, target_id=sender_id).first()
+            if enemy and enemy.is_enabled:
+                # اولویت: custom_messages از EnemyList یا enemy_messages از User
+                messages = enemy.custom_messages if enemy.custom_messages else user.enemy_messages
+                if messages:
+                    response_text = random.choice(messages)
+                    try:
+                        await event.reply(response_text)
+                    except:
+                        pass
+            
+            # ✅ کراش - پاسخ خودکار با متن‌های custom          
+            crush = CrushList.objects(user_id=user.id, target_id=sender_id).first()
+            if crush and crush.is_enabled:
+                # اولویت: custom_messages از CrushList یا crush_messages از User
+                messages = crush.custom_messages if crush.custom_messages else user.crush_messages
+                if messages:
+                    response_text = random.choice(messages)
+                    try:
+                        await event.reply(response_text)
+                    except:
+                        pass
+            
+            # ✅ دوست - بدون پاسخ (فقط نشان‌دادن لیست)
+            friend = FriendList.objects(user_id=user.id, target_id=sender_id).first()
+            # دوستان نیازی به پاسخ خودکار ندارند
 
         # ---------------- 2. Incoming PV Interceptor (Locks & Auto-Seen) ----------------
         @client.on(events.NewMessage(incoming=True, func=lambda e: e.is_private))
@@ -3155,6 +3523,7 @@ def run_telethon_loop():
         print("[+] Main Bot Interface Started!")
 
         LOGIN_STATES = {}
+        LIST_STATES = {}  # ✅ برای ردگیری state اضافه کردن/حذف لیست‌ها
         ACTIVE_BETS = {}  # {group_id: bet_id}
 
         @bot.on(events.NewMessage(pattern='/adminid'))
@@ -3242,22 +3611,24 @@ def run_telethon_loop():
                 # تشخیص وضعیت کاربر
                 user_db = User.objects(telegram_id=user_id).first()
                 if not user_db:
-                    # کاربر جدید - pending
-                    try:
-                        user_db = User(
-                            telegram_id=user_id,
-                            admin_id=str(admin_db.id) if admin_db else 'default',  # ✅ Convert ObjectId to string
-                            phone_number=sender.phone or "",  # ✅ Try to get real phone, else empty
-                            username=username,
-                            first_name=sender.first_name or "",
-                            is_authenticated=False
-                        )
-                        user_db.save()
-                        print(f"✅ کاربر جدید ذخیره شد: {user_id}")
-                    except Exception as e:
-                        print(f"❌ خطا در ذخیره کاربر: {e}")
-                        await event.respond(f"❌ خطا: {e}")
-                        return
+                    # کاربر جدید - ابتدا باید زبان انتخاب کند
+                    buttons = []
+                    for lang_code, lang_name in LANGUAGES.items():
+                        buttons.append([Button.inline(lang_name, f'lang_{lang_code}')])
+                    
+                    text = "🗣️ لطفاً زبان خود را انتخاب کنید / Please select your language:"
+                    await event.respond(text, buttons=buttons)
+                    return
+                
+                # اگر کاربر قبلاً زبان انتخاب نکرده، درخواست کن
+                if not hasattr(user_db, 'language') or not user_db.language:
+                    buttons = []
+                    for lang_code, lang_name in LANGUAGES.items():
+                        buttons.append([Button.inline(lang_name, f'lang_{lang_code}')])
+                    
+                    text = "🗣️ لطفاً زبان خود را انتخاب کنید / Please select your language:"
+                    await event.respond(text, buttons=buttons)
+                    return
                 
                 is_authenticated = user_db and user_db.is_authenticated
 
@@ -3332,6 +3703,81 @@ def run_telethon_loop():
 
         # ============ CALLBACK HANDLERS ============
 
+        # ============ LANGUAGE SELECTION CALLBACKS ============
+        @bot.on(events.CallbackQuery(data=b'lang_fa'))
+        async def lang_fa_callback(event):
+            """انتخاب فارسی"""
+            await set_language(event, 'fa')
+
+        @bot.on(events.CallbackQuery(data=b'lang_en'))
+        async def lang_en_callback(event):
+            """Select English"""
+            await set_language(event, 'en')
+
+        @bot.on(events.CallbackQuery(data=b'lang_ru'))
+        async def lang_ru_callback(event):
+            """Выберите русский"""
+            await set_language(event, 'ru')
+
+        @bot.on(events.CallbackQuery(data=b'lang_ar'))
+        async def lang_ar_callback(event):
+            """اختر العربية"""
+            await set_language(event, 'ar')
+
+        @bot.on(events.CallbackQuery(data=b'lang_de'))
+        async def lang_de_callback(event):
+            """Wählen Sie Deutsch"""
+            await set_language(event, 'de')
+
+        async def set_language(event, lang_code):
+            """تعیین زبان و ذخیره‌سازی"""
+            user_id = event.sender_id
+            sender = await event.get_sender()
+            admin_db = Admin.objects.first()
+            
+            # ایجاد یا بروزرسانی کاربر
+            user_db = User.objects(telegram_id=user_id).first()
+            if not user_db:
+                try:
+                    user_db = User(
+                        telegram_id=user_id,
+                        admin_id=str(admin_db.id) if admin_db else 'default',
+                        phone_number=sender.phone or "",
+                        username=sender.username or "",
+                        first_name=sender.first_name or "",
+                        language=lang_code,  # ✅ زبان ذخیره شد
+                        is_authenticated=False
+                    )
+                    user_db.save()
+                except Exception as e:
+                    await event.answer(f"❌ خطا: {e}")
+                    return
+            else:
+                user_db.language = lang_code
+                user_db.save()
+            
+            await event.delete()
+            
+            # نمایش منوی اصلی
+            lang_display = {
+                'fa': '🇮🇷 فارسی',
+                'en': '🇬🇧 English',
+                'ru': '🇷🇺 Русский',
+                'ar': '🇸🇦 العربية',
+                'de': '🇩🇪 Deutsch'
+            }
+            
+            text = f"✅ **زبان انتخاب شد:** {lang_display.get(lang_code, lang_code)}\n\n"
+            text += get_text(lang_code, 'welcome').format(name=sender.first_name or 'دوست')
+            
+            buttons = [
+                [Button.inline(get_text(lang_code, 'manage_lists'), b'manage_lists')],
+                [Button.inline(get_text(lang_code, 'settings'), b'user_settings')],
+                [Button.inline('💎 ' + get_text(lang_code, 'settings').replace('⚙️ ', ''), b'buy_gems')],
+            ]
+            
+            await event.respond(text, buttons=buttons)
+
         @bot.on(events.CallbackQuery(data=b'check_subscription'))
         async def check_subscription_callback(event):
             """✅ بررسی عضویت اجباری و ادامه یا بازگشت"""
@@ -3403,6 +3849,143 @@ def run_telethon_loop():
                 print(f"[!] خطا در بررسی عضویت: {e}")
                 await event.answer(f'❌ خطای سیستم: {str(e)[:50]}', alert=True)
 
+        # ============ LIST MANAGEMENT CALLBACKS ============
+        @bot.on(events.CallbackQuery(data=b'manage_lists'))
+        async def manage_lists_callback(event):
+            """📋 مدیریت لیست‌های دشمن/کراش/دوست"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not user_db:
+                await event.answer('❌ کاربر پیدا نشد!')
+                return
+            
+            lang = user_db.language or 'fa'
+            text = f"📋 **{get_text(lang, 'manage_lists')}**\n\n"
+            text += get_text(lang, 'welcome').split('!')[0] + "!"
+            
+            buttons = [
+                [Button.inline('👿 ' + get_text(lang, 'enemy_list'), b'enemy_list_menu')],
+                [Button.inline('💕 ' + get_text(lang, 'crush_list'), b'crush_list_menu')],
+                [Button.inline('👥 ' + get_text(lang, 'friend_list'), b'friend_list_menu')],
+                [Button.inline(get_text(lang, 'back'), b'lang_' + lang)]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'enemy_list_menu'))
+        async def enemy_list_menu(event):
+            """👿 منوی لیست دشمن"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            lang = user_db.language or 'fa'
+            
+            enemies = EnemyList.objects(user_id=user_id).all()
+            text = f"👿 **{get_text(lang, 'enemy_list')}**\n\n"
+            text += f"📊 {len(enemies)} دشمن ثبت‌شده\n\n"
+            
+            for enemy in enemies:
+                status = '✅' if enemy.is_enabled else '❌'
+                text += f"{status} @{enemy.target_username} (ID: {enemy.target_id})\n"
+            
+            buttons = [
+                [Button.inline(get_text(lang, 'add_enemy'), b'add_enemy_prompt')],
+                [Button.inline(get_text(lang, 'remove_enemy'), b'remove_enemy_prompt')],
+                [Button.inline(get_text(lang, 'back'), b'manage_lists')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'crush_list_menu'))
+        async def crush_list_menu(event):
+            """💕 منوی لیست کراش"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            lang = user_db.language or 'fa'
+            
+            crushes = CrushList.objects(user_id=user_id).all()
+            text = f"💕 **{get_text(lang, 'crush_list')}**\n\n"
+            text += f"📊 {len(crushes)} کراش ثبت‌شده\n\n"
+            
+            for crush in crushes:
+                status = '✅' if crush.is_enabled else '❌'
+                text += f"{status} @{crush.target_username} (ID: {crush.target_id})\n"
+            
+            buttons = [
+                [Button.inline(get_text(lang, 'add_crush'), b'add_crush_prompt')],
+                [Button.inline(get_text(lang, 'remove_crush'), b'remove_crush_prompt')],
+                [Button.inline(get_text(lang, 'back'), b'manage_lists')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery(data=b'friend_list_menu'))
+        async def friend_list_menu(event):
+            """👥 منوی لیست دوستان"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            lang = user_db.language or 'fa'
+            
+            friends = FriendList.objects(user_id=user_id).all()
+            text = f"👥 **{get_text(lang, 'friend_list')}**\n\n"
+            text += f"📊 {len(friends)} دوست ثبت‌شده\n\n"
+            
+            for friend in friends:
+                status = '✅' if friend.is_enabled else '❌'
+                text += f"{status} @{friend.target_username} (ID: {friend.target_id})\n"
+            
+            buttons = [
+                [Button.inline(get_text(lang, 'add_friend'), b'add_friend_prompt')],
+                [Button.inline(get_text(lang, 'remove_friend'), b'remove_friend_prompt')],
+                [Button.inline(get_text(lang, 'back'), b'manage_lists')]
+            ]
+            
+            await event.edit(text, buttons=buttons)
+
+        # ============ LANGUAGE SETTINGS ============
+        @bot.on(events.CallbackQuery(data=b'user_settings'))
+        async def user_settings_callback(event):
+            """⚙️ تنظیمات کاربر"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            lang = user_db.language or 'fa'
+            
+            text = f"⚙️ **{get_text(lang, 'settings')}**\n\n"
+            text += f"🗣️ {get_text(lang, 'language_settings')}:\n"
+            text += f"**{LANGUAGES.get(lang, lang)}**"
+            
+            buttons = []
+            for lang_code, lang_name in LANGUAGES.items():
+                buttons.append([Button.inline(lang_name, f'change_lang_{lang_code}')])
+            buttons.append([Button.inline(get_text(lang, 'back'), b'manage_lists')])
+            
+            await event.edit(text, buttons=buttons)
+
+        @bot.on(events.CallbackQuery())
+        async def change_language_handler(event):
+            """تغییر زبان"""
+            if event.data.startswith(b'change_lang_'):
+                lang_code = event.data.decode().split('_')[2]
+                user_id = event.sender_id
+                user_db = User.objects(telegram_id=user_id).first()
+                
+                if user_db:
+                    user_db.language = lang_code
+                    user_db.save()
+                    
+                    await event.answer(f"✅ {LANGUAGES.get(lang_code, lang_code)}")
+                    
+                    text = f"⚙️ **{get_text(lang_code, 'settings')}**\n\n"
+                    text += f"🗣️ {get_text(lang_code, 'language_settings')}:\n"
+                    text += f"**{LANGUAGES.get(lang_code, lang_code)}**"
+                    
+                    buttons = []
+                    for lc, ln in LANGUAGES.items():
+                        buttons.append([Button.inline(ln, f'change_lang_{lc}')])
+                    buttons.append([Button.inline(get_text(lang_code, 'back'), b'manage_lists')])
+                    
+                    await event.edit(text, buttons=buttons)
+
         @bot.on(events.CallbackQuery(data=b'self_panel'))
         async def self_panel_callback(event):
             """پنل قابلیت‌های سلف"""
@@ -3443,6 +4026,9 @@ def run_telethon_loop():
                 [Button.inline('🔒 قفل‌های رسانه', b'manage_locks'),
                  Button.inline('⏳ وضعیت‌های خودکار', b'manage_status')],
                 [Button.inline('🌍 ترجمه خودکار', b'manage_translation')],
+                [Button.inline('📋 مدیریت لیست‌ها', b'manage_lists'),
+                 Button.inline('💎 فروشگاه جم', b'gem_shop')],
+                [Button.inline('⚙️ تنظیمات زبان', b'lang_' + (user_db.language or 'fa'))],
                 [Button.inline('🏠 بازگشت', b'back_start')]
             ]
             
@@ -3690,6 +4276,72 @@ def run_telethon_loop():
             )
             
             await event.edit(stats, buttons=[[Button.inline('🏠 بازگشت', b'back_start')]])
+
+        @bot.on(events.CallbackQuery(data=b'gem_shop'))
+        async def gem_shop_callback(event):
+            """💎 فروشگاه جم - اطلاعات قیمت و محاسبات"""
+            user_id = event.sender_id
+            user_db = User.objects(telegram_id=user_id).first()
+            
+            if not user_db:
+                await event.answer('❌ کاربر یافت نشد', alert=True)
+                return
+            
+            lang = user_db.language or 'fa'
+            
+            # محاسبات جم
+            monthly_gems = 24 * 30 * Config.GEMS_PER_HOUR  # 1440 gems
+            cost_toman = monthly_gems * Config.GEM_PRICE_TOMAN
+            cost_usd = cost_toman / Config.USD_TO_TOMAN
+            
+            if lang == 'fa':
+                shop_text = f"""💎 **فروشگاه جم**
+
+📊 **اطلاعات موردنیاز:**
+• هر ساعت: {Config.GEMS_PER_HOUR} جم کم می‌شود
+• ماهانه: {monthly_gems} جم نیاز است
+• 📈 هزینه ماهانه: {cost_toman:,.0f} تومان
+
+💵 **نرخ تبدیل ارز:**
+1 USD = {Config.USD_TO_TOMAN:,} تومان
+1 تومان = {1/Config.USD_TO_TOMAN:.0e} USD
+
+🎯 **محاسبه ماهانه:**
+برای ادامه سلف:
+• {monthly_gems} جم موردنیاز
+• {cost_usd:.2f} USD
+• {cost_toman:,.0f} تومان
+
+💳 **روش پرداخت:**
+تماس با ادمین برای خریدن جم
+"""
+            else:
+                shop_text = f"""💎 **Gem Shop**
+
+📊 **Required Information:**
+• Per hour: {Config.GEMS_PER_HOUR} gems decrease
+• Monthly: {monthly_gems} gems needed
+• 📈 Monthly cost: {cost_usd:.2f} USD
+
+💵 **Currency Conversion:**
+1 USD = {Config.USD_TO_TOMAN:,} Toman
+1 Toman = {1/Config.USD_TO_TOMAN:.0e} USD
+
+🎯 **Monthly Calculation:**
+To continue self-bot:
+• {monthly_gems} gems needed
+• {cost_usd:.2f} USD
+• {cost_toman:,.0f} Toman
+
+💳 **Payment Method:**
+Contact admin to buy gems
+"""
+            
+            buttons = [
+                [Button.inline(get_text(lang, 'back'), b'self_panel')]
+            ]
+            
+            await event.edit(shop_text, buttons=buttons)
 
         @bot.on(events.CallbackQuery(data=b'back_start'))
         async def back_start_callback(event):
